@@ -1,0 +1,26 @@
+[project]
+name = "ood"
+version = "0.1.0"
+description = "Object-oriented deep learning helpers for Jupyter notebooks"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+dependencies = [
+    "torch>=2.2",
+    "matplotlib>=3.7",
+    "ipython>=8.0",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ood"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
