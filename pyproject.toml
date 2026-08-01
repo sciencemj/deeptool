@@ -1,16 +1,33 @@
 [project]
-name = "ood"
-version = "0.1.0"
+name = "ood-dl"
+dynamic = ["version"]
 description = "Object-oriented deep learning helpers for Jupyter notebooks"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
+authors = [{ name = "sciencemj" }]
+keywords = ["deep-learning", "pytorch", "jupyter", "education", "object-oriented"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Education",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Framework :: Jupyter",
+]
 dependencies = [
     "torch>=2.2",
     "matplotlib>=3.7",
     "ipython>=8.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/sciencemj/ood-dl"
+Repository = "https://github.com/sciencemj/ood-dl"
+Issues = "https://github.com/sciencemj/ood-dl/issues"
 
 [dependency-groups]
 dev = ["pytest>=8.0"]
@@ -19,8 +36,23 @@ dev = ["pytest>=8.0"]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.version]
+path = "ood/__init__.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["ood"]
+
+# CI(리눅스)에서 기본 torch 휠은 NVIDIA 라이브러리까지 끌고 와 ~2.5GB 가 된다.
+# CPU 전용 인덱스로 ~200MB 로 줄인다. 이 설정은 이 저장소에서 개발할 때만 쓰이며,
+# 빌드되는 wheel 의 의존성 메타데이터는 여전히 "torch>=2.2" 라 최종 사용자에게는
+# 영향이 없다.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
