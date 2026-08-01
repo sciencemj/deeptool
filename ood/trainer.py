@@ -86,3 +86,32 @@ class Trainer(HyperParameters):
     def clip_gradients(self, grad_clip_val):
         params = [p for p in self.model.parameters() if p.requires_grad]
         torch.nn.utils.clip_grad_norm_(params, grad_clip_val)
+
+    def save_checkpoint(self, path):
+        """모델·optimizer 상태와 에폭·하이퍼파라미터를 한 파일로 저장한다."""
+        torch.save(
+            {
+                "model": self.model.state_dict(),
+                "optim": self.optim.state_dict(),
+                "epoch": self.epoch,
+                "hparams": getattr(self.model, "hparams", {}),
+            },
+            path,
+        )
+
+    @staticmethod
+    def load_checkpoint(path, model, optim=None):
+        """체크포인트를 ``model`` 에 in-place 로 복원한다.
+
+        ``optim`` 을 주면 optimizer 상태까지 복원한다 (학습 재개용).
+        주지 않으면 가중치만 복원한다 (추론용).
+        저장된 ``epoch`` 과 ``hparams`` 를 담은 dict 를 반환한다.
+
+        ``hparams`` 는 임의의 파이썬 객체일 수 있어 ``weights_only=False`` 로
+        읽는다. 신뢰할 수 있는 체크포인트만 로드하라.
+        """
+        ckpt = torch.load(path, map_location="cpu", weights_only=False)
+        model.load_state_dict(ckpt["model"])
+        if optim is not None:
+            optim.load_state_dict(ckpt["optim"])
+        return {"epoch": ckpt["epoch"], "hparams": ckpt["hparams"]}

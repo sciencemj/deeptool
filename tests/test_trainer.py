@@ -105,3 +105,64 @@ def test_gradient_clipping_runs_without_error():
     history = trainer.fit(LinReg(), LinearData())
 
     assert len(history["train_loss"]) == 1
+
+
+def test_save_checkpoint_writes_a_loadable_file(tmp_path):
+    trainer = Trainer(max_epochs=2, device="cpu", plot=False)
+    trainer.fit(LinReg(), LinearData())
+    path = tmp_path / "ckpt.pt"
+
+    trainer.save_checkpoint(path)
+
+    ckpt = torch.load(path, map_location="cpu", weights_only=False)
+    assert set(ckpt) == {"model", "optim", "epoch", "hparams"}
+
+
+def test_load_checkpoint_restores_model_weights(tmp_path):
+    trainer = Trainer(max_epochs=2, device="cpu", plot=False)
+    trained = LinReg()
+    trainer.fit(trained, LinearData())
+    path = tmp_path / "ckpt.pt"
+    trainer.save_checkpoint(path)
+
+    fresh = LinReg()
+    Trainer.load_checkpoint(path, fresh)
+
+    for a, b in zip(trained.state_dict().values(), fresh.state_dict().values()):
+        assert torch.equal(a.cpu(), b)
+
+
+def test_load_checkpoint_returns_epoch_and_hparams(tmp_path):
+    trainer = Trainer(max_epochs=3, device="cpu", plot=False)
+    trainer.fit(LinReg(lr=0.05), LinearData())
+    path = tmp_path / "ckpt.pt"
+    trainer.save_checkpoint(path)
+
+    meta = Trainer.load_checkpoint(path, LinReg())
+
+    assert meta["epoch"] == 2  # 0-indexed, max_epochs=3 의 마지막
+    assert meta["hparams"] == {"lr": 0.05}
+
+
+def test_load_checkpoint_restores_optimizer_when_given(tmp_path):
+    trainer = Trainer(max_epochs=2, device="cpu", plot=False)
+    trainer.fit(LinReg(), LinearData())
+    path = tmp_path / "ckpt.pt"
+    trainer.save_checkpoint(path)
+
+    fresh = LinReg()
+    optim = fresh.configure_optimizers()
+    Trainer.load_checkpoint(path, fresh, optim)
+
+    assert optim.state_dict()["param_groups"][0]["lr"] == 0.1
+
+
+def test_load_checkpoint_without_optimizer_leaves_it_alone(tmp_path):
+    trainer = Trainer(max_epochs=1, device="cpu", plot=False)
+    trainer.fit(LinReg(), LinearData())
+    path = tmp_path / "ckpt.pt"
+    trainer.save_checkpoint(path)
+
+    meta = Trainer.load_checkpoint(path, LinReg(), optim=None)
+
+    assert "epoch" in meta
