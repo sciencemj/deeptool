@@ -1,5 +1,8 @@
 # ood
 
+[![CI](https://github.com/sciencemj/ood-dl/actions/workflows/ci.yml/badge.svg)](https://github.com/sciencemj/ood-dl/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/ood-dl)](https://pypi.org/project/ood-dl/)
+
 주피터 노트북에서 PyTorch 모델을 객체지향으로 다루기 위한 얇은 보조 라이브러리.
 
 모델은 유저가 PyTorch로 직접 작성한다. 이 라이브러리는 그 주변만 담당한다 —
@@ -7,6 +10,18 @@
 디바이스 자동 선택, 체크포인트.
 
 ## 설치
+
+```bash
+pip install ood-dl
+```
+
+배포 이름은 `ood-dl`, import 이름은 `ood` 다. PyPI 에 `ood` 이름이 이미 쓰이고 있어서다.
+
+```python
+import ood as od
+```
+
+이 저장소에서 직접 개발하려면:
 
 ```bash
 uv sync
