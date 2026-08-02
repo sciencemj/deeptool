@@ -1,6 +1,7 @@
 """학습 루프 — 디바이스 배치, 에폭 반복, 손실 집계."""
 
 import copy
+import os
 
 import torch
 
@@ -19,11 +20,24 @@ def default_device():
     return torch.device("cpu")
 
 
+def _atomic_save(payload, path):
+    """임시 파일에 쓴 뒤 원자적으로 교체한다.
+
+    최적 스냅샷은 개선될 때마다 같은 경로를 덮어쓴다. 쓰는 도중 중단되면
+    그때까지 쌓은 최적 가중치를 통째로 잃으므로, 교체가 원자적이어야 한다.
+    ``os.replace`` 는 POSIX 와 Windows 양쪽에서 원자적이며, 실패하면
+    이전 파일이 그대로 남는다.
+    """
+    tmp = f"{path}.tmp"
+    torch.save(payload, tmp)
+    os.replace(tmp, path)
+
+
 class Trainer(HyperParameters):
     """``Module`` 과 ``DataModule`` 을 받아 학습을 돌린다."""
 
     def __init__(self, max_epochs, device=None, gradient_clip_val=0, plot=True,
-                 snapshot_best=True):
+                 snapshot_best=True, best_path=None, best_with_optim=False):
         self.save_hyperparameters()
         self.device = torch.device(device) if device is not None else default_device()
         self.board = ProgressBoard(xlabel="epoch", ylabel="loss") if plot else None
@@ -108,8 +122,22 @@ class Trainer(HyperParameters):
             return
         self.best_val_loss = val_loss
         self.best_epoch = self.epoch
-        if self.snapshot_best:
+        if not self.snapshot_best:
+            return
+        if self.best_path is None:
             self._best_state = copy.deepcopy(self.model.state_dict())
+            return
+        # optimizer 상태는 restore_best() 가 읽지 않는다. Adam 기준 모델의 2배라
+        # 매 개선마다 쓰면 낭비이므로 기본값은 가중치 전용이다.
+        if self.best_with_optim:
+            payload = self._checkpoint_payload()
+        else:
+            payload = {
+                "model": self.model.state_dict(),
+                "epoch": self.epoch,
+                "val_loss": val_loss,
+            }
+        _atomic_save(payload, self.best_path)
 
     def restore_best(self):
         """최저 검증 손실 시점의 가중치로 되돌리고 그 epoch 를 반환한다.
@@ -127,20 +155,25 @@ class Trainer(HyperParameters):
                 f"(최저점은 epoch {self.best_epoch}, "
                 f"val_loss {self.best_val_loss:.4f} 이었습니다)"
             )
-        self.model.load_state_dict(self._best_state)
+        if self.best_path is None:
+            self.model.load_state_dict(self._best_state)
+        else:
+            ckpt = torch.load(self.best_path, map_location="cpu", weights_only=False)
+            self.model.load_state_dict(ckpt["model"])
         return self.best_epoch
+
+    def _checkpoint_payload(self):
+        """학습 재개가 가능한 전체 체크포인트 페이로드."""
+        return {
+            "model": self.model.state_dict(),
+            "optim": self.optim.state_dict(),
+            "epoch": self.epoch,
+            "hparams": getattr(self.model, "hparams", {}),
+        }
 
     def save_checkpoint(self, path):
         """모델·optimizer 상태와 에폭·하이퍼파라미터를 한 파일로 저장한다."""
-        torch.save(
-            {
-                "model": self.model.state_dict(),
-                "optim": self.optim.state_dict(),
-                "epoch": self.epoch,
-                "hparams": getattr(self.model, "hparams", {}),
-            },
-            path,
-        )
+        torch.save(self._checkpoint_payload(), path)
 
     @staticmethod
     def load_checkpoint(path, model, optim=None):

@@ -283,3 +283,43 @@ def test_restore_best_with_snapshotting_off_reports_the_best_epoch():
 
     with pytest.raises(RuntimeError, match="epoch 1"):
         trainer.restore_best()
+
+
+def test_best_path_writes_the_snapshot_to_disk(tmp_path):
+    path = tmp_path / "best.pt"
+    model = ScriptedLoss([0.5, 0.3, 0.7, 0.9])
+    trainer = Trainer(max_epochs=4, device="cpu", plot=False, best_path=path)
+    trainer.fit(model, ScriptedData())
+
+    assert path.exists()
+    saved = torch.load(path, map_location="cpu", weights_only=False)["model"]
+
+    assert trainer.restore_best() == 1
+
+    for key, value in saved.items():
+        assert torch.equal(model.state_dict()[key].cpu(), value)
+
+
+def test_disk_snapshot_omits_optimizer_state_by_default(tmp_path):
+    path = tmp_path / "best.pt"
+    trainer = Trainer(max_epochs=3, device="cpu", plot=False, best_path=path)
+    trainer.fit(ScriptedLoss([0.5, 0.3, 0.7]), ScriptedData())
+
+    ckpt = torch.load(path, map_location="cpu", weights_only=False)
+
+    assert set(ckpt) == {"model", "epoch", "val_loss"}
+    assert ckpt["epoch"] == 1
+    assert ckpt["val_loss"] == pytest.approx(0.3)
+
+
+def test_best_with_optim_writes_a_resumable_checkpoint(tmp_path):
+    path = tmp_path / "best.pt"
+    trainer = Trainer(max_epochs=3, device="cpu", plot=False,
+                      best_path=path, best_with_optim=True)
+    trainer.fit(ScriptedLoss([0.5, 0.3, 0.7]), ScriptedData())
+
+    fresh = ScriptedLoss([0.0])
+    optim = fresh.configure_optimizers()
+    meta = Trainer.load_checkpoint(path, fresh, optim)
+
+    assert meta["epoch"] == 1
