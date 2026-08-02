@@ -95,6 +95,164 @@ torch.Size([256, 1, 28, 28]) torch.float32 torch.Size([256]) torch.int64
 235 40
 ```
 
+## Hugging Face datasets
+
+`datasets` is not a dependency of `deeptool` either. Install it when you need it.
+
+```bash
+uv run --with datasets jupyter lab
+```
+
+The batch convention absorbs both images and text. The only thing you write is
+the `collate`.
+
+```
+image  batch = (image, label)                     → self(*batch[:-1]) = self(image)
+text   batch = (input_ids, attention_mask, label) → self(*batch[:-1]) = self(ids, mask)
+```
+
+### Two things HF does differently
+
+**It yields dicts.** A HF dataset gives you `{"image": …, "label": …}`.
+`deeptool` reads `batch[:-1]` as inputs and `batch[-1]` as targets, so that
+does not work as is.
+
+```
+KeyError: slice(None, -1, None)
+```
+
+**Images arrive as uint8 0-255.** `with_format("torch")` converts to tensors but
+does not normalize. The `/255` and float conversion that torchvision's
+`ToTensor()` performs is missing.
+
+```
+RuntimeError: mat1 and mat2 must have the same dtype, but got Byte and Float
+```
+
+The name makes this easy to miss. The shape is already `(N, 1, 28, 28)`,
+channel-first, so that part needs nothing.
+
+### Images
+
+```python
+import torch
+from torch.utils.data import DataLoader, default_collate
+from datasets import load_dataset
+
+
+class HFMnist(dt.DataModule):
+    def __init__(self, batch_size=64):
+        super().__init__()
+        self.save_hyperparameters()
+        d = load_dataset("ylecun/mnist")
+        self.splits = {True: d["train"].with_format("torch"),
+                       False: d["test"].with_format("torch")}
+
+    def get_dataloader(self, train):
+        def collate(examples):
+            b = default_collate(examples)
+            return b["image"].float() / 255, b["label"]
+        return DataLoader(self.splits[train], self.batch_size,
+                          shuffle=train, collate_fn=collate)
+```
+
+That one `collate` handles both problems — dict to tuple, and `/255` to
+normalize. Everything after it is business as usual.
+
+```python
+data = HFMnist()
+trainer = dt.Trainer(max_epochs=5, patience=3)
+trainer.fit(model, data)          # model is a dt.Module subclass
+trainer.restore_best()
+trainer.predict(data).accuracy
+```
+
+### Text
+
+You need a tokenizer. Also not a dependency of `deeptool`.
+
+```bash
+uv run --with datasets --with transformers jupyter lab
+```
+
+```python
+from transformers import AutoTokenizer
+
+TOK = AutoTokenizer.from_pretrained("distilbert-base-uncased")
+
+
+class IMDB(dt.DataModule):
+    def __init__(self, batch_size=16, max_length=128):
+        super().__init__()
+        self.save_hyperparameters()
+        d = load_dataset("stanfordnlp/imdb")
+        self.splits = {True: d["train"].shuffle(seed=0),
+                       False: d["test"].shuffle(seed=0)}
+
+    def get_dataloader(self, train):
+        def collate(examples):
+            enc = TOK([e["text"] for e in examples], truncation=True,
+                      padding="max_length", max_length=self.max_length,
+                      return_tensors="pt")
+            labels = torch.tensor([e["label"] for e in examples])
+            return enc["input_ids"], enc["attention_mask"], labels
+        return DataLoader(self.splits[train], self.batch_size,
+                          shuffle=train, collate_fn=collate)
+```
+
+No `with_format("torch")` here. Strings will not become tensors anyway, and the
+tokenizer wants the raw `str`.
+
+The batch now has three elements, and `deeptool` takes it unchanged.
+`batch[:-1]` is `(input_ids, attention_mask)`, so `forward` just needs to accept
+two arguments.
+
+```python
+class TextNet(dt.Module):
+    def __init__(self, vocab_size=TOK.vocab_size, dim=64, lr=1e-3):
+        super().__init__()
+        self.save_hyperparameters()
+        self.emb = nn.Embedding(vocab_size, dim, padding_idx=TOK.pad_token_id)
+        self.head = nn.Linear(dim, 2)
+
+    def forward(self, input_ids, attention_mask):
+        h = self.emb(input_ids) * attention_mask.unsqueeze(-1)
+        return self.head(h.sum(1) / attention_mask.sum(1, keepdim=True))
+```
+
+### The format is not uniform
+
+Do not read this far and conclude that all HF datasets look like this. **The
+dict wrapper is the only thing they share.**
+
+| Dataset | After `with_format("torch")` | After `default_collate` |
+|---|---|---|
+| `ylecun/mnist` | `Tensor`, `Tensor` | `(4,1,28,28) uint8`, `(4,) int64` |
+| `stanfordnlp/imdb` | **`str`**, `Tensor` | **`list`**, `(4,) int64` |
+| `rajpurkar/squad` | `str`×4, nested `dict` | `list`×4, nested `dict` |
+| `Helsinki-NLP/opus_books` | `str`, nested `dict` | `list`, nested `dict` |
+
+`with_format("torch")` **cannot turn strings into tensors.** It leaves them as
+`str`. That is not a shortcoming of HF — the tokenizer differs per model, so it
+cannot be decided at the dataset level.
+
+QA and translation carry nested dicts that `default_collate` cannot batch into
+tensors either. For those tasks the preprocessing pipeline is the real work and
+the dataloader is the last step. It is not something `deeptool` can do for you.
+
+!!! note "Why there is no `HFDataModule`"
+    Installing `datasets` pulls in 35 packages; `transformers` pulls in 46.
+    Keeping runtime dependencies at `torch`, `matplotlib` and `ipython` is a
+    policy of this library, and the code it would save is six lines for images.
+
+    The `collate` differs completely per modality, so there is nothing to
+    unify anyway.
+
+Both examples above were run on 2026-08-03. MNIST with 4,000/1,000 samples and a
+linear model reached 0.857 accuracy in 5 epochs; IMDB with 800/400 samples and
+embedding plus mean-pooling reached 0.6575 in 6 epochs. In both cases
+`predict`, `restore_best` and `patience` worked without modification.
+
 ## Two things that bite
 
 **Image batches are `(N, 1, 28, 28)`.** They are four-dimensional, so the model
