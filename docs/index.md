@@ -5,6 +5,7 @@
 모델은 당신이 PyTorch로 직접 쓴다. `deeptool`은 그 주변만 담당한다.
 
 ```bash
+uv add deeptool     # uv 프로젝트에
 pip install deeptool
 ```
 

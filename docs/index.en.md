@@ -6,6 +6,7 @@ Jupyter notebooks.
 You write the model in plain PyTorch. `deeptool` handles what surrounds it.
 
 ```bash
+uv add deeptool     # in a uv project
 pip install deeptool
 ```
 

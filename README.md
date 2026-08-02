@@ -14,6 +14,7 @@
 ## 설치
 
 ```bash
+uv add deeptool     # uv 프로젝트에
 pip install deeptool
 ```
 
