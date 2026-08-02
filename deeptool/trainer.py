@@ -2,13 +2,13 @@
 
 import torch
 
-from ood.board import ProgressBoard
-from ood.checkpoint import BestSnapshot
-from ood.core import HyperParameters
+from deeptool.board import ProgressBoard
+from deeptool.checkpoint import BestSnapshot
+from deeptool.core import HyperParameters
 # 아래 셋은 Trainer 의 동명 메서드와 겹치므로 별칭으로 가져온다.
-from ood.checkpoint import load_checkpoint as _load_checkpoint
-from ood.checkpoint import save_checkpoint as _save_checkpoint
-from ood.evaluate import predict as _predict
+from deeptool.checkpoint import load_checkpoint as _load_checkpoint
+from deeptool.checkpoint import save_checkpoint as _save_checkpoint
+from deeptool.evaluate import predict as _predict
 
 
 def default_device():

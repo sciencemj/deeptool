@@ -3,9 +3,9 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from ood.board import ProgressBoard
-from ood.core import add_to_class
-from ood.module import Module
+from deeptool.board import ProgressBoard
+from deeptool.core import add_to_class
+from deeptool.module import Module
 
 
 class FakeTrainer:

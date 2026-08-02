@@ -3,7 +3,7 @@
 import torch
 from torch import nn
 
-from ood.core import HyperParameters
+from deeptool.core import HyperParameters
 
 
 class Module(nn.Module, HyperParameters):

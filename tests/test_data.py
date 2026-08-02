@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from ood.data import DataModule
+from deeptool.data import DataModule
 
 
 class ToyData(DataModule):

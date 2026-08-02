@@ -1,4 +1,4 @@
-from ood.core import HyperParameters, add_to_class
+from deeptool.core import HyperParameters, add_to_class
 
 
 def test_add_to_class_attaches_method():

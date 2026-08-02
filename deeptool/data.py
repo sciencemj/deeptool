@@ -2,7 +2,7 @@
 
 from torch.utils import data as torch_data
 
-from ood.core import HyperParameters
+from deeptool.core import HyperParameters
 
 
 class DataModule(HyperParameters):

@@ -1,4 +1,4 @@
-from ood.board import ProgressBoard
+from deeptool.board import ProgressBoard
 
 
 def test_draw_buffers_until_every_n_reached():

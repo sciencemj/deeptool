@@ -3,10 +3,10 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from ood.core import add_to_class
-from ood.data import DataModule
-from ood.module import Module
-from ood.trainer import Trainer, default_device
+from deeptool.core import add_to_class
+from deeptool.data import DataModule
+from deeptool.module import Module
+from deeptool.trainer import Trainer, default_device
 
 
 class LinearData(DataModule):

@@ -3,11 +3,11 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from ood.core import add_to_class
-from ood.data import DataModule
-from ood.evaluate import Predictions, predict
-from ood.module import Module
-from ood.trainer import Trainer
+from deeptool.core import add_to_class
+from deeptool.data import DataModule
+from deeptool.evaluate import Predictions, predict
+from deeptool.module import Module
+from deeptool.trainer import Trainer
 
 
 class ToyClassifierData(DataModule):

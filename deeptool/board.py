@@ -2,7 +2,7 @@
 
 from matplotlib import pyplot as plt
 
-from ood.core import HyperParameters
+from deeptool.core import HyperParameters
 
 
 def _in_notebook():
