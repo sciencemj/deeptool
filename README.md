@@ -81,6 +81,40 @@ trainer.save_checkpoint("linreg.pt")
 
 전체 예제는 [`examples/quickstart.ipynb`](examples/quickstart.ipynb) 참고.
 
+### 조기 종료와 최적 가중치
+
+개선이 멈출 때까지 돌리고 가장 좋았던 가중치를 쓴다.
+
+```python
+trainer = od.Trainer(max_epochs=100, patience=5)
+trainer.fit(model, data)
+
+len(trainer.history["val_loss"])             # 24 — 100까지 안 감
+trainer.best_epoch, trainer.best_val_loss    # (18, 0.2913)
+
+trainer.restore_best()                       # 18 을 반환
+```
+
+`fit()` 은 가중치를 자동으로 되돌리지 않는다. `restore_best()` 를 부르기 전까지는
+마지막 epoch 상태이므로 두 시점의 성능을 비교할 수 있다.
+
+기본은 메모리 스냅샷이다. 파일로 남기려면:
+
+```python
+od.Trainer(max_epochs=100, patience=5, best_path="best.pt")
+```
+
+파일에는 모델 가중치만 들어간다. optimizer 상태는 `restore_best()` 가 읽지 않는데
+Adam 기준 모델의 2배라 매 epoch 쓰면 낭비다. 최저점부터 학습을 재개할 계획이면
+`best_with_optim=True` 로 전체 체크포인트를 남긴다.
+
+| 인자 | 기본 | 의미 |
+|---|---|---|
+| `snapshot_best` | `True` | 스냅샷을 만들 것인가 |
+| `best_path` | `None` | `None` 이면 메모리, 경로면 파일 |
+| `best_with_optim` | `False` | 파일에 optimizer 상태도 넣을 것인가 |
+| `patience` | `None` | 몇 epoch 개선이 없으면 멈출 것인가 |
+
 ### 학습 후 평가
 
 ```python
@@ -106,7 +140,7 @@ p.inputs[~p.correct]             # 틀린 샘플의 입력 — 시각화에 쓴�
 | `od.HyperParameters` | `save_hyperparameters()` 로 `__init__` 인자를 속성 + `hparams` 로 저장 |
 | `od.DataModule` | `get_dataloader(train)` 하나만 구현하면 되는 데이터 규약 |
 | `od.Module` | `forward`/`loss`/`configure_optimizers` 를 채우는 모델 규약 |
-| `od.Trainer` | `fit(model, data)`, `predict(data)`, `save_checkpoint`, `load_checkpoint`, `history` |
+| `od.Trainer` | `fit(model, data)`, `predict(data)`, `restore_best()`, `save_checkpoint`, `load_checkpoint`, `history`, `best_epoch`, `best_val_loss` |
 | `od.predict` | 모델과 dataloader 를 받아 데이터셋 전체 예측을 모은다 |
 | `od.Predictions` | 예측 결과. `preds`·`probs`·`confidence`·`correct`·`accuracy` |
 | `od.ProgressBoard` | 라이브 손실 곡선. `Trainer(plot=True)` 가 자동으로 만든다 |
