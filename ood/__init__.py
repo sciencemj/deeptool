@@ -7,7 +7,7 @@ from ood.evaluate import Predictions, predict
 from ood.module import Module
 from ood.trainer import Trainer, default_device
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "DataModule",

@@ -81,6 +81,23 @@ trainer.save_checkpoint("linreg.pt")
 
 전체 예제는 [`examples/quickstart.ipynb`](examples/quickstart.ipynb) 참고.
 
+### 학습 후 평가
+
+```python
+p = trainer.predict(data)        # 검증셋 전체 추론
+
+p.accuracy                       # 0.8837
+p.preds                          # 샘플별 예측 클래스
+p.confidence                     # 예측 확신도
+p.correct                        # 맞췄는지 여부 (bool 텐서)
+
+p = trainer.predict(data, keep_inputs=True)
+p.inputs[~p.correct]             # 틀린 샘플의 입력 — 시각화에 쓴다
+```
+
+`preds`·`probs`·`confidence`·`correct`·`accuracy` 는 분류 전용이다.
+회귀 모델이면 `p.outputs` 를 직접 쓴다.
+
 ## API
 
 | 이름 | 역할 |
@@ -89,7 +106,9 @@ trainer.save_checkpoint("linreg.pt")
 | `od.HyperParameters` | `save_hyperparameters()` 로 `__init__` 인자를 속성 + `hparams` 로 저장 |
 | `od.DataModule` | `get_dataloader(train)` 하나만 구현하면 되는 데이터 규약 |
 | `od.Module` | `forward`/`loss`/`configure_optimizers` 를 채우는 모델 규약 |
-| `od.Trainer` | `fit(model, data)`, `save_checkpoint`, `load_checkpoint`, `history` |
+| `od.Trainer` | `fit(model, data)`, `predict(data)`, `save_checkpoint`, `load_checkpoint`, `history` |
+| `od.predict` | 모델과 dataloader 를 받아 데이터셋 전체 예측을 모은다 |
+| `od.Predictions` | 예측 결과. `preds`·`probs`·`confidence`·`correct`·`accuracy` |
 | `od.ProgressBoard` | 라이브 손실 곡선. `Trainer(plot=True)` 가 자동으로 만든다 |
 | `od.default_device()` | `cuda` → `mps` → `cpu` |
 
