@@ -1,13 +1,13 @@
-"""학습 루프 — 디바이스 배치, 에폭 반복, 손실 집계."""
-
-import copy
-import os
+"""학습 루프 — 디바이스 배치, 에폭 반복, 손실 집계, 조기 종료."""
 
 import torch
 
 from ood.board import ProgressBoard
+from ood.checkpoint import BestSnapshot
 from ood.core import HyperParameters
-# 메서드 이름과 겹치므로 별칭으로 가져온다.
+# 아래 셋은 Trainer 의 동명 메서드와 겹치므로 별칭으로 가져온다.
+from ood.checkpoint import load_checkpoint as _load_checkpoint
+from ood.checkpoint import save_checkpoint as _save_checkpoint
 from ood.evaluate import predict as _predict
 
 
@@ -18,19 +18,6 @@ def default_device():
     if torch.backends.mps.is_available():
         return torch.device("mps")
     return torch.device("cpu")
-
-
-def _atomic_save(payload, path):
-    """임시 파일에 쓴 뒤 원자적으로 교체한다.
-
-    최적 스냅샷은 개선될 때마다 같은 경로를 덮어쓴다. 쓰는 도중 중단되면
-    그때까지 쌓은 최적 가중치를 통째로 잃으므로, 교체가 원자적이어야 한다.
-    ``os.replace`` 는 POSIX 와 Windows 양쪽에서 원자적이며, 실패하면
-    이전 파일이 그대로 남는다.
-    """
-    tmp = f"{path}.tmp"
-    torch.save(payload, tmp)
-    os.replace(tmp, path)
 
 
 class Trainer(HyperParameters):
@@ -50,9 +37,17 @@ class Trainer(HyperParameters):
         self.epoch = 0
         self.train_batch_idx = 0
         self.val_batch_idx = 0
-        self.best_val_loss = None
-        self.best_epoch = None
-        self._best_state = None
+        self._best = BestSnapshot(snapshot_best, best_path, best_with_optim)
+
+    @property
+    def best_val_loss(self):
+        """최저 검증 손실. 아직 기록이 없으면 ``None``."""
+        return self._best.val_loss
+
+    @property
+    def best_epoch(self):
+        """최저 검증 손실을 낸 epoch. 아직 기록이 없으면 ``None``."""
+        return self._best.epoch
 
     def prepare_data(self, data):
         self.train_dataloader = data.train_dataloader()
@@ -116,7 +111,7 @@ class Trainer(HyperParameters):
             losses.append(loss.detach().cpu().item())
         val_loss = sum(losses) / len(losses)
         self.history["val_loss"].append(val_loss)
-        self._track_best(val_loss)
+        self._best.update(val_loss, self.epoch, self.model, self.optim)
 
     def clip_gradients(self, grad_clip_val):
         params = [p for p in self.model.parameters() if p.requires_grad]
@@ -128,69 +123,15 @@ class Trainer(HyperParameters):
             return False
         return self.epoch - self.best_epoch >= self.patience
 
-    def _track_best(self, val_loss):
-        """검증 손실이 최저를 갱신하면 기록하고 스냅샷을 뜬다.
-
-        ``snapshot_best=False`` 여도 ``best_val_loss``·``best_epoch`` 는 계속
-        기록한다. float 비교라 비용이 없고, "몇 번째가 최저였는가" 는 그 자체로
-        쓸모가 있다.
-        """
-        if self.best_val_loss is not None and val_loss >= self.best_val_loss:
-            return
-        self.best_val_loss = val_loss
-        self.best_epoch = self.epoch
-        if not self.snapshot_best:
-            return
-        if self.best_path is None:
-            self._best_state = copy.deepcopy(self.model.state_dict())
-            return
-        # optimizer 상태는 restore_best() 가 읽지 않는다. Adam 기준 모델의 2배라
-        # 매 개선마다 쓰면 낭비이므로 기본값은 가중치 전용이다.
-        if self.best_with_optim:
-            payload = self._checkpoint_payload()
-        else:
-            payload = {
-                "model": self.model.state_dict(),
-                "epoch": self.epoch,
-                "val_loss": val_loss,
-            }
-        _atomic_save(payload, self.best_path)
-
     def restore_best(self):
-        """최저 검증 손실 시점의 가중치로 되돌리고 그 epoch 를 반환한다.
-
-        모델 가중치만 되돌린다. optimizer 상태는 건드리지 않는다 — 목적이
-        "가장 좋은 모델로 평가·추론" 이지 학습 재개가 아니다.
-        """
+        """최저 검증 손실 시점의 가중치로 되돌리고 그 epoch 를 반환한다."""
         if not hasattr(self, "model"):
             raise RuntimeError("아직 학습하지 않았습니다.")
-        if self.best_epoch is None:
-            raise RuntimeError("검증 데이터가 없어 스냅샷이 없습니다.")
-        if not self.snapshot_best:
-            raise RuntimeError(
-                f"snapshot_best=False 로 학습해 스냅샷이 없습니다. "
-                f"(최저점은 epoch {self.best_epoch}, "
-                f"val_loss {self.best_val_loss:.4f} 이었습니다)"
-            )
-        if self.best_path is None:
-            self.model.load_state_dict(self._best_state)
-        else:
-            ckpt = torch.load(self.best_path, map_location="cpu", weights_only=False)
-            self.model.load_state_dict(ckpt["model"])
-        return self.best_epoch
-
-    def _checkpoint_payload(self):
-        """학습 재개가 가능한 전체 체크포인트 페이로드."""
-        return {
-            "model": self.model.state_dict(),
-            "optim": self.optim.state_dict(),
-            "epoch": self.epoch,
-            "hparams": getattr(self.model, "hparams", {}),
-        }
+        return self._best.restore(self.model)
 
     def save_checkpoint(self, path):
         """모델·optimizer 상태와 에폭·하이퍼파라미터를 한 파일로 저장한다."""
-        torch.save(self._checkpoint_payload(), path)
+        _save_checkpoint(self.model, self.optim, self.epoch, path)
 
     @staticmethod
     def load_checkpoint(path, model, optim=None):
@@ -199,15 +140,8 @@ class Trainer(HyperParameters):
         ``optim`` 을 주면 optimizer 상태까지 복원한다 (학습 재개용).
         주지 않으면 가중치만 복원한다 (추론용).
         저장된 ``epoch`` 과 ``hparams`` 를 담은 dict 를 반환한다.
-
-        ``hparams`` 는 임의의 파이썬 객체일 수 있어 ``weights_only=False`` 로
-        읽는다. 신뢰할 수 있는 체크포인트만 로드하라.
         """
-        ckpt = torch.load(path, map_location="cpu", weights_only=False)
-        model.load_state_dict(ckpt["model"])
-        if optim is not None:
-            optim.load_state_dict(ckpt["optim"])
-        return {"epoch": ckpt["epoch"], "hparams": ckpt["hparams"]}
+        return _load_checkpoint(path, model, optim)
 
     def predict(self, data, train=False, keep_inputs=False):
         """학습이 끝난 모델을 ``data`` 전체에 돌려 ``Predictions`` 를 반환한다.
