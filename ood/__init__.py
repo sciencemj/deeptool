@@ -3,6 +3,7 @@
 from ood.board import ProgressBoard
 from ood.core import HyperParameters, add_to_class
 from ood.data import DataModule
+from ood.evaluate import Predictions, predict
 from ood.module import Module
 from ood.trainer import Trainer, default_device
 
@@ -12,9 +13,11 @@ __all__ = [
     "DataModule",
     "HyperParameters",
     "Module",
+    "Predictions",
     "ProgressBoard",
     "Trainer",
     "add_to_class",
     "default_device",
+    "predict",
     "__version__",
 ]
