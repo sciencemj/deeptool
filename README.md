@@ -3,6 +3,8 @@
 [![CI](https://github.com/sciencemj/deeptool/actions/workflows/ci.yml/badge.svg)](https://github.com/sciencemj/deeptool/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/deeptool)](https://pypi.org/project/deeptool/)
 
+📖 **[문서](https://sciencemj.github.io/deeptool/)** · [English](https://sciencemj.github.io/deeptool/en/)
+
 주피터 노트북에서 PyTorch 모델을 객체지향으로 다루기 위한 얇은 보조 라이브러리.
 
 모델은 유저가 PyTorch로 직접 작성한다. 이 라이브러리는 그 주변만 담당한다 —
