@@ -37,8 +37,13 @@ class Trainer(HyperParameters):
     """``Module`` 과 ``DataModule`` 을 받아 학습을 돌린다."""
 
     def __init__(self, max_epochs, device=None, gradient_clip_val=0, plot=True,
-                 snapshot_best=True, best_path=None, best_with_optim=False):
+                 snapshot_best=True, best_path=None, best_with_optim=False,
+                 patience=None):
         self.save_hyperparameters()
+        # patience=0 이면 최저점 epoch 에서도 epoch - best_epoch >= 0 이 참이 되어
+        # 첫 epoch 직후 멈춘다. 의미가 없으므로 막는다.
+        if patience is not None and patience < 1:
+            raise ValueError(f"patience 는 1 이상이어야 합니다 (받은 값: {patience})")
         self.device = torch.device(device) if device is not None else default_device()
         self.board = ProgressBoard(xlabel="epoch", ylabel="loss") if plot else None
         self.history = {"train_loss": [], "val_loss": []}
@@ -73,11 +78,17 @@ class Trainer(HyperParameters):
 
     def fit(self, model, data):
         self.prepare_data(data)
+        # 검증 데이터가 없으면 best_epoch 가 계속 None 이라 조기 종료가 영원히
+        # 발동하지 않는다. 조용히 무시하면 왜 안 멈추는지 알 수 없으므로 막는다.
+        if self.patience is not None and self.num_val_batches == 0:
+            raise ValueError("patience 를 쓰려면 검증 데이터가 필요합니다.")
         self.prepare_model(model)
         self.materialize_lazy_parameters()
         self.optim = self.model.configure_optimizers()
         for self.epoch in range(self.max_epochs):
             self.fit_epoch()
+            if self._should_stop_early():
+                break
         return self.history
 
     def fit_epoch(self):
@@ -110,6 +121,12 @@ class Trainer(HyperParameters):
     def clip_gradients(self, grad_clip_val):
         params = [p for p in self.model.parameters() if p.requires_grad]
         torch.nn.utils.clip_grad_norm_(params, grad_clip_val)
+
+    def _should_stop_early(self):
+        """개선 없이 ``patience`` epoch 가 지났으면 True."""
+        if self.patience is None or self.best_epoch is None:
+            return False
+        return self.epoch - self.best_epoch >= self.patience
 
     def _track_best(self, val_loss):
         """검증 손실이 최저를 갱신하면 기록하고 스냅샷을 뜬다.

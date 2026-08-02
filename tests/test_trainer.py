@@ -323,3 +323,31 @@ def test_best_with_optim_writes_a_resumable_checkpoint(tmp_path):
     meta = Trainer.load_checkpoint(path, fresh, optim)
 
     assert meta["epoch"] == 1
+
+
+def test_patience_stops_training_early():
+    """0.3 이 최저(epoch 1)이고 patience=2 이므로 epoch 3 에서 멈춘다."""
+    trainer = Trainer(max_epochs=5, device="cpu", plot=False, patience=2)
+    trainer.fit(ScriptedLoss([0.5, 0.3, 0.7, 0.9, 0.9]), ScriptedData())
+
+    assert len(trainer.history["val_loss"]) == 4   # epoch 0~3
+    assert trainer.best_epoch == 1
+
+
+def test_without_patience_every_epoch_runs():
+    trainer = Trainer(max_epochs=5, device="cpu", plot=False)
+    trainer.fit(ScriptedLoss([0.5, 0.3, 0.7, 0.9, 0.9]), ScriptedData())
+
+    assert len(trainer.history["val_loss"]) == 5
+
+
+def test_patience_below_one_is_rejected():
+    with pytest.raises(ValueError, match="patience"):
+        Trainer(max_epochs=5, device="cpu", plot=False, patience=0)
+
+
+def test_patience_without_validation_data_is_rejected():
+    trainer = Trainer(max_epochs=5, device="cpu", plot=False, patience=2)
+
+    with pytest.raises(ValueError, match="검증 데이터"):
+        trainer.fit(LinReg(), NoValData())
