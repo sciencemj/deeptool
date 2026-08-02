@@ -111,7 +111,7 @@ def test_classification_properties_reject_shape_mismatch():
     """회귀 모델의 (N,1) 출력에서 조용히 브로드캐스트되지 않고 막혀야 한다."""
     p = Predictions(torch.randn(4, 1), torch.randn(4, 1))
 
-    with pytest.raises(ValueError, match="분류 전용"):
+    with pytest.raises(ValueError, match="classification-only"):
         p.accuracy
 
 

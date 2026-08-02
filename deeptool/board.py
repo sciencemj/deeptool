@@ -1,4 +1,4 @@
-"""학습 곡선을 노트북 셀 안에서 제자리 갱신하는 보드."""
+"""Live training curves that update in place inside a notebook cell."""
 
 from matplotlib import pyplot as plt
 
@@ -6,7 +6,7 @@ from deeptool.core import HyperParameters
 
 
 def _in_notebook():
-    """IPython 커널 안에서 돌고 있으면 True. 순수 스크립트면 False."""
+    """True when running inside an IPython kernel, False in a plain script."""
     try:
         from IPython import get_ipython
     except ImportError:
@@ -16,12 +16,13 @@ def _in_notebook():
 
 
 class ProgressBoard(HyperParameters):
-    """label 별 곡선을 누적해 그리는 라이브 플롯.
+    """A live plot that accumulates one curve per label.
 
-    ``draw`` 를 부를 때마다 점을 버퍼에 넣고, ``every_n`` 개가 모이면
-    평균 1점으로 압축해 곡선에 추가한 뒤 figure 를 다시 그린다.
-    노트북이면 이전 출력을 지우고 새 figure 로 교체하고, 스크립트면
-    데이터만 누적하고 렌더링은 건너뛴다.
+    Each `draw` call buffers a point. Once `every_n` points have arrived they
+    are averaged into a single point on the curve and the figure is redrawn.
+
+    In a notebook the previous output is replaced with the new figure. In a
+    plain script the data still accumulates but nothing is rendered.
     """
 
     def __init__(self, xlabel=None, ylabel=None, xlim=None, ylim=None,

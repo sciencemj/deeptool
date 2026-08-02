@@ -1,16 +1,22 @@
-"""학습이 끝난 모델의 사후 평가 — 데이터셋 전체 예측을 한 번에 모은다."""
+"""Post-hoc evaluation: collect predictions over a whole dataset at once."""
 
 import torch
 
 
 class Predictions:
-    """``predict`` 의 결과.
+    """The result of `predict`.
 
-    원본 ``outputs`` 와 ``targets`` 만 저장하고 나머지는 속성으로 파생한다.
-    속성은 캐시하지 않는다 — 무효화 규칙이 생기는 것보다 매번 계산하는 편이 싸다.
+    Stores only the raw `outputs` and `targets`; everything else is derived as a
+    property and recomputed each time rather than cached.
 
-    ``preds``·``probs``·``confidence``·``correct``·``accuracy`` 는 **분류 전용**이다.
-    회귀 모델이면 ``outputs`` 를 직접 쓴다.
+    `preds`, `probs`, `confidence`, `correct` and `accuracy` are
+    **classification only**. For a regression model, use `outputs` directly.
+
+    Attributes:
+        outputs: Raw model output, shape `(N, ...)`. Always on CPU.
+        targets: Ground truth, shape `(N, ...)`. Always on CPU.
+        inputs: Input tensors, present only when `predict` was called with
+            `keep_inputs=True`. Otherwise `None`.
     """
 
     def __init__(self, outputs, targets, inputs=None):
@@ -31,49 +37,63 @@ class Predictions:
 
     @property
     def preds(self):
+        """Predicted class per sample, `outputs.argmax(dim=-1)`."""
         return self.outputs.argmax(dim=-1)
 
     @property
     def probs(self):
+        """Class probabilities, `outputs.softmax(dim=-1)`."""
         return self.outputs.softmax(dim=-1)
 
     @property
     def confidence(self):
+        """Probability assigned to the predicted class."""
         return self.probs.max(dim=-1).values
 
     @property
     def correct(self):
+        """Boolean tensor of whether each prediction matches its target.
+
+        Raises:
+            ValueError: If `preds` and `targets` have different shapes, which
+                means this is not a classification result.
+        """
         preds = self.preds
         if preds.shape != self.targets.shape:
             raise ValueError(
-                f"preds shape {tuple(preds.shape)} 와 targets shape "
-                f"{tuple(self.targets.shape)} 가 다릅니다. "
-                "분류 전용 속성입니다 — 회귀 모델이면 outputs 를 직접 쓰세요."
+                f"preds shape {tuple(preds.shape)} does not match targets shape "
+                f"{tuple(self.targets.shape)}. This is a classification-only "
+                "property; use outputs directly for regression."
             )
         return preds == self.targets
 
     @property
     def accuracy(self):
+        """Fraction of correct predictions, as a plain float."""
         return self.correct.float().mean().item()
 
 
 @torch.no_grad()
 def predict(model, dataloader, device=None, keep_inputs=False):
-    """``dataloader`` 전체를 추론해 ``Predictions`` 로 모은다.
+    """Run the model over an entire dataloader and collect per-sample results.
 
-    배치 규약은 ``Module.training_step`` 과 같다: ``batch[:-1]`` 이 입력,
-    ``batch[-1]`` 이 정답이다. ``inputs`` 로 보관하는 것은 ``batch[0]`` 이다.
+    Results are moved to CPU as they arrive, so the dataset never accumulates in
+    accelerator memory and downstream code gets the CPU tensors it expects.
 
-    ``device`` 가 ``None`` 이면 모델 파라미터가 올라가 있는 디바이스를 쓴다.
+    Puts the model in eval mode and leaves it there. `Trainer.fit_epoch` calls
+    `model.train()` at the start of every epoch, so resuming training is safe.
 
-    결과는 즉시 CPU 로 회수한다. 그러지 않으면 데이터셋 전체가 가속기 메모리에
-    쌓이고, matplotlib 같은 downstream 코드도 CPU 텐서를 기대한다.
+    Args:
+        model: A model following the `Module` batch convention — `batch[:-1]`
+            are inputs and `batch[-1]` are targets.
+        dataloader: Batches to run through the model.
+        device: Where to run inference. Defaults to the model's own device.
+        keep_inputs: Also collect `batch[0]`. Off by default because inputs are
+            much larger than outputs — 10,000 28x28 images is 31MB against 400KB
+            of logits.
 
-    ``keep_inputs`` 기본값은 ``False`` 다. 입력 텐서는 출력보다 훨씬 크다
-    (28×28 이미지 1만장 = 31MB vs 출력 400KB).
-
-    ``model.eval()`` 을 호출하고 이전 모드를 복원하지 않는다. ``Trainer.fit_epoch``
-    이 매 에폭 ``model.train()`` 을 다시 부르므로 학습 재개에 영향이 없다.
+    Returns:
+        A `Predictions` holding CPU tensors.
     """
     model.eval()
     if device is None:

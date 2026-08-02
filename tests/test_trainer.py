@@ -257,7 +257,7 @@ def test_fit_keeps_the_last_epoch_weights_until_restore_best():
 
 
 def test_restore_best_before_fit_raises():
-    with pytest.raises(RuntimeError, match="아직 학습"):
+    with pytest.raises(RuntimeError, match="has not run"):
         Trainer(max_epochs=1, device="cpu", plot=False).restore_best()
 
 
@@ -265,7 +265,7 @@ def test_restore_best_without_validation_data_raises():
     trainer = Trainer(max_epochs=2, device="cpu", plot=False)
     trainer.fit(LinReg(), NoValData())
 
-    with pytest.raises(RuntimeError, match="검증 데이터"):
+    with pytest.raises(RuntimeError, match="no validation data"):
         trainer.restore_best()
 
 
@@ -349,5 +349,5 @@ def test_patience_below_one_is_rejected():
 def test_patience_without_validation_data_is_rejected():
     trainer = Trainer(max_epochs=5, device="cpu", plot=False, patience=2)
 
-    with pytest.raises(ValueError, match="검증 데이터"):
+    with pytest.raises(ValueError, match="validation data"):
         trainer.fit(LinReg(), NoValData())

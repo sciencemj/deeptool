@@ -1,4 +1,4 @@
-"""모델 규약 — nn.Module 에 하이퍼파라미터 저장과 플롯 훅을 얹는다."""
+"""Model contract: nn.Module plus hyperparameter capture and plotting hooks."""
 
 import torch
 from torch import nn
@@ -7,12 +7,13 @@ from deeptool.core import HyperParameters
 
 
 class Module(nn.Module, HyperParameters):
-    """유저 모델의 베이스 클래스.
+    """Base class for your models.
 
-    유저는 ``forward``(또는 ``self.net``), ``loss``, ``configure_optimizers``
-    셋만 채우면 된다. 노트북에서는 ``@add_to_class`` 로 나중 셀에서 붙여도 된다.
+    You fill in three things: `forward` (or just assign `self.net`), `loss`, and
+    `configure_optimizers`. In a notebook you can attach them from later cells
+    with `@add_to_class`.
 
-    ``board`` 와 ``trainer`` 는 ``Trainer.fit`` 이 주입한다.
+    `board` and `trainer` are injected by `Trainer.fit`.
     """
 
     def __init__(self, plot_train_per_epoch=2, plot_valid_per_epoch=1):
@@ -22,7 +23,7 @@ class Module(nn.Module, HyperParameters):
         self.trainer = None
 
     def forward(self, X):
-        assert hasattr(self, "net"), "forward() 를 구현하거나 self.net 을 정의하라"
+        assert hasattr(self, "net"), "implement forward() or assign self.net"
         return self.net(X)
 
     def loss(self, y_hat, y):
@@ -32,7 +33,15 @@ class Module(nn.Module, HyperParameters):
         raise NotImplementedError
 
     def plot(self, key, value, train):
-        """스칼라 하나를 보드에 찍는다. 보드가 없으면 아무것도 안 한다."""
+        """Draw one scalar on the live board. A no-op when there is no board.
+
+        Args:
+            key: Curve name. Rendered as `train_<key>` or `val_<key>`.
+            value: A scalar tensor or plain float.
+            train: Selects the training or validation curve. Training points use
+                a fractional epoch on the x-axis; validation points use the
+                epoch number.
+        """
         if self.board is None or self.trainer is None:
             return
         if torch.is_tensor(value):

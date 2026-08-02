@@ -1,4 +1,9 @@
-"""deeptool — object-oriented deep learning helpers for Jupyter notebooks."""
+"""Object-oriented deep learning helpers for Jupyter notebooks.
+
+You write the model in plain PyTorch. `deeptool` handles what surrounds it:
+hyperparameter capture, attaching methods across notebook cells, live loss
+curves, device selection, checkpoints and post-hoc evaluation.
+"""
 
 from deeptool.board import ProgressBoard
 from deeptool.core import HyperParameters, add_to_class
