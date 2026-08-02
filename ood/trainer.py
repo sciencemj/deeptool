@@ -4,6 +4,8 @@ import torch
 
 from ood.board import ProgressBoard
 from ood.core import HyperParameters
+# 메서드 이름과 겹치므로 별칭으로 가져온다.
+from ood.evaluate import predict as _predict
 
 
 def default_device():
@@ -115,3 +117,11 @@ class Trainer(HyperParameters):
         if optim is not None:
             optim.load_state_dict(ckpt["optim"])
         return {"epoch": ckpt["epoch"], "hparams": ckpt["hparams"]}
+
+    def predict(self, data, train=False, keep_inputs=False):
+        """학습이 끝난 모델을 ``data`` 전체에 돌려 ``Predictions`` 를 반환한다.
+
+        기본은 검증셋이고, ``train=True`` 면 학습셋을 쓴다.
+        """
+        loader = data.train_dataloader() if train else data.val_dataloader()
+        return _predict(self.model, loader, self.device, keep_inputs)

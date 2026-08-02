@@ -7,6 +7,7 @@ from ood.core import add_to_class
 from ood.data import DataModule
 from ood.evaluate import Predictions, predict
 from ood.module import Module
+from ood.trainer import Trainer
 
 
 class ToyClassifierData(DataModule):
@@ -125,3 +126,26 @@ def test_repr_omits_accuracy_when_shapes_mismatch():
     p = Predictions(torch.randn(4, 1), torch.randn(4, 1))
 
     assert "accuracy=" not in repr(p)
+
+
+def _fitted_trainer(data):
+    trainer = Trainer(max_epochs=1, device="cpu", plot=False)
+    trainer.fit(ToyClassifier(), data)
+    return trainer
+
+
+def test_trainer_predict_uses_the_validation_loader_by_default():
+    data = ToyClassifierData()
+    trainer = _fitted_trainer(data)
+
+    assert len(trainer.predict(data)) == 8
+    assert len(trainer.predict(data, train=True)) == 12
+
+
+def test_trainer_predict_forwards_keep_inputs():
+    data = ToyClassifierData()
+    trainer = _fitted_trainer(data)
+
+    p = trainer.predict(data, keep_inputs=True)
+
+    assert p.inputs.shape == (8, 5)
