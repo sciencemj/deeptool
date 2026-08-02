@@ -1,9 +1,10 @@
 """Notebook-friendly primitives: class extension and hyperparameter capture."""
 
 import inspect
+from collections.abc import Callable, Iterable
 
 
-def add_to_class(Class):
+def add_to_class(Class: type) -> Callable[[Callable], Callable]:
     """Register the decorated function as a method on `Class`.
 
     Lets you define a class in one notebook cell and attach methods from later
@@ -24,7 +25,7 @@ def add_to_class(Class):
         ```
     """
 
-    def wrapper(func):
+    def wrapper(func: Callable) -> Callable:
         setattr(Class, func.__name__, func)
         return func
 
@@ -34,7 +35,7 @@ def add_to_class(Class):
 class HyperParameters:
     """Mixin that saves `__init__` arguments as attributes and in `self.hparams`."""
 
-    def save_hyperparameters(self, ignore=()):
+    def save_hyperparameters(self, ignore: Iterable[str] = ()) -> None:
         """Store the calling `__init__`'s arguments on the instance.
 
         Reads the declared arguments of the calling frame — positional and

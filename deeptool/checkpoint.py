@@ -2,11 +2,13 @@
 
 import copy
 import os
+from pathlib import Path
+from typing import Any
 
 import torch
 
 
-def atomic_save(payload, path):
+def atomic_save(payload: dict[str, Any], path: str | Path) -> None:
     """Write to a temporary file, then swap it into place atomically.
 
     Best snapshots overwrite the same path on every improvement. An interrupted
@@ -23,7 +25,8 @@ def atomic_save(payload, path):
     os.replace(tmp, path)
 
 
-def checkpoint_payload(model, optim, epoch):
+def checkpoint_payload(model: torch.nn.Module, optim: torch.optim.Optimizer,
+                       epoch: int) -> dict[str, Any]:
     """Build a full checkpoint payload that can resume training.
 
     Args:
@@ -42,7 +45,8 @@ def checkpoint_payload(model, optim, epoch):
     }
 
 
-def save_checkpoint(model, optim, epoch, path):
+def save_checkpoint(model: torch.nn.Module, optim: torch.optim.Optimizer,
+                    epoch: int, path: str | Path) -> None:
     """Save model and optimizer state, epoch and hyperparameters to one file.
 
     Args:
@@ -54,7 +58,8 @@ def save_checkpoint(model, optim, epoch, path):
     torch.save(checkpoint_payload(model, optim, epoch), path)
 
 
-def load_checkpoint(path, model, optim=None):
+def load_checkpoint(path: str | Path, model: torch.nn.Module,
+                    optim: torch.optim.Optimizer | None = None) -> dict[str, Any]:
     """Restore a checkpoint into `model` in place.
 
     Warning:
@@ -92,7 +97,8 @@ class BestSnapshot:
         epoch: Epoch that produced it, or `None`.
     """
 
-    def __init__(self, enabled=True, path=None, with_optim=False):
+    def __init__(self, enabled: bool = True, path: str | Path | None = None,
+                 with_optim: bool = False) -> None:
         self.enabled = enabled
         self.path = path
         self.with_optim = with_optim
@@ -100,7 +106,8 @@ class BestSnapshot:
         self.epoch = None
         self._state = None
 
-    def update(self, val_loss, epoch, model, optim):
+    def update(self, val_loss: float, epoch: int, model: torch.nn.Module,
+               optim: torch.optim.Optimizer) -> None:
         """Record a new minimum and snapshot the weights.
 
         Does nothing when `val_loss` is not lower than the current best.
@@ -132,7 +139,7 @@ class BestSnapshot:
             }
         atomic_save(payload, self.path)
 
-    def restore(self, model):
+    def restore(self, model: torch.nn.Module) -> int:
         """Restore `model` to the best weights and return that epoch.
 
         Only model weights are restored; optimizer state is left alone. The

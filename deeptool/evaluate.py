@@ -1,5 +1,7 @@
 """Post-hoc evaluation: collect predictions over a whole dataset at once."""
 
+from collections.abc import Iterable, Sequence
+
 import torch
 
 
@@ -19,15 +21,16 @@ class Predictions:
             `keep_inputs=True`. Otherwise `None`.
     """
 
-    def __init__(self, outputs, targets, inputs=None):
+    def __init__(self, outputs: torch.Tensor, targets: torch.Tensor,
+                 inputs: torch.Tensor | None = None) -> None:
         self.outputs = outputs
         self.targets = targets
         self.inputs = inputs
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.targets)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         body = f"n={len(self)} outputs={tuple(self.outputs.shape)}"
         # 회귀 결과에 accuracy 를 계산하면 브로드캐스트로 (N, N) 텐서가 만들어진다.
         # shape 이 맞을 때만 붙인다.
@@ -36,22 +39,22 @@ class Predictions:
         return f"<Predictions {body}>"
 
     @property
-    def preds(self):
+    def preds(self) -> torch.Tensor:
         """Predicted class per sample, `outputs.argmax(dim=-1)`."""
         return self.outputs.argmax(dim=-1)
 
     @property
-    def probs(self):
+    def probs(self) -> torch.Tensor:
         """Class probabilities, `outputs.softmax(dim=-1)`."""
         return self.outputs.softmax(dim=-1)
 
     @property
-    def confidence(self):
+    def confidence(self) -> torch.Tensor:
         """Probability assigned to the predicted class."""
         return self.probs.max(dim=-1).values
 
     @property
-    def correct(self):
+    def correct(self) -> torch.Tensor:
         """Boolean tensor of whether each prediction matches its target.
 
         Raises:
@@ -68,13 +71,16 @@ class Predictions:
         return preds == self.targets
 
     @property
-    def accuracy(self):
+    def accuracy(self) -> float:
         """Fraction of correct predictions, as a plain float."""
         return self.correct.float().mean().item()
 
 
 @torch.no_grad()
-def predict(model, dataloader, device=None, keep_inputs=False):
+def predict(model: torch.nn.Module,
+            dataloader: Iterable[Sequence[torch.Tensor]],
+            device: torch.device | str | None = None,
+            keep_inputs: bool = False) -> Predictions:
     """Run the model over an entire dataloader and collect per-sample results.
 
     Results are moved to CPU as they arrive, so the dataset never accumulates in

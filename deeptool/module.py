@@ -1,5 +1,7 @@
 """Model contract: nn.Module plus hyperparameter capture and plotting hooks."""
 
+from collections.abc import Sequence
+
 import torch
 from torch import nn
 
@@ -16,23 +18,24 @@ class Module(nn.Module, HyperParameters):
     `board` and `trainer` are injected by `Trainer.fit`.
     """
 
-    def __init__(self, plot_train_per_epoch=2, plot_valid_per_epoch=1):
+    def __init__(self, plot_train_per_epoch: int = 2,
+                 plot_valid_per_epoch: int = 1) -> None:
         super().__init__()
         self.save_hyperparameters()
         self.board = None
         self.trainer = None
 
-    def forward(self, X):
+    def forward(self, X: torch.Tensor) -> torch.Tensor:
         assert hasattr(self, "net"), "implement forward() or assign self.net"
         return self.net(X)
 
-    def loss(self, y_hat, y):
+    def loss(self, y_hat: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
 
-    def configure_optimizers(self):
+    def configure_optimizers(self) -> torch.optim.Optimizer:
         raise NotImplementedError
 
-    def plot(self, key, value, train):
+    def plot(self, key: str, value: torch.Tensor | float, train: bool) -> None:
         """Draw one scalar on the live board. A no-op when there is no board.
 
         Args:
@@ -56,12 +59,12 @@ class Module(nn.Module, HyperParameters):
         self.board.draw(x, float(value), prefix + key,
                         every_n=max(1, int(every_n)))
 
-    def training_step(self, batch):
+    def training_step(self, batch: Sequence[torch.Tensor]) -> torch.Tensor:
         loss = self.loss(self(*batch[:-1]), batch[-1])
         self.plot("loss", loss, train=True)
         return loss
 
-    def validation_step(self, batch):
+    def validation_step(self, batch: Sequence[torch.Tensor]) -> torch.Tensor:
         loss = self.loss(self(*batch[:-1]), batch[-1])
         self.plot("loss", loss, train=False)
         return loss

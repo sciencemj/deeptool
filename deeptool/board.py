@@ -1,11 +1,13 @@
 """Live training curves that update in place inside a notebook cell."""
 
+from collections.abc import Sequence
+
 from matplotlib import pyplot as plt
 
 from deeptool.core import HyperParameters
 
 
-def _in_notebook():
+def _in_notebook() -> bool:
     """True when running inside an IPython kernel, False in a plain script."""
     try:
         from IPython import get_ipython
@@ -25,18 +27,21 @@ class ProgressBoard(HyperParameters):
     plain script the data still accumulates but nothing is rendered.
     """
 
-    def __init__(self, xlabel=None, ylabel=None, xlim=None, ylim=None,
-                 xscale="linear", yscale="linear",
-                 ls=("-", "--", "-.", ":"),
-                 colors=("C0", "C1", "C2", "C3"),
-                 figsize=(3.5, 2.5), display=True):
+    def __init__(self, xlabel: str | None = None, ylabel: str | None = None,
+                 xlim: tuple[float, float] | None = None,
+                 ylim: tuple[float, float] | None = None,
+                 xscale: str = "linear", yscale: str = "linear",
+                 ls: Sequence[str] = ("-", "--", "-.", ":"),
+                 colors: Sequence[str] = ("C0", "C1", "C2", "C3"),
+                 figsize: tuple[float, float] = (3.5, 2.5),
+                 display: bool = True) -> None:
         self.save_hyperparameters()
         self.raw_points = {}
         self.data = {}
         self.fig = None
         self.axes = None
 
-    def draw(self, x, y, label, every_n=1):
+    def draw(self, x: float, y: float, label: str, every_n: int = 1) -> None:
         if label not in self.raw_points:
             self.raw_points[label] = []
             self.data[label] = []
@@ -52,7 +57,7 @@ class ProgressBoard(HyperParameters):
         if self.display:
             self._render()
 
-    def _render(self):
+    def _render(self) -> None:
         if self.fig is None:
             self.fig, self.axes = plt.subplots(figsize=self.figsize)
             # pyplot 의 figure 매니저에서 떼어내 inline 백엔드가 셀 끝에서
@@ -78,7 +83,7 @@ class ProgressBoard(HyperParameters):
         self.axes.legend()
         self._show()
 
-    def _show(self):
+    def _show(self) -> None:
         if not _in_notebook():
             return
         from IPython import display as ipy_display

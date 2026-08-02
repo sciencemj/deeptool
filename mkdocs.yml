@@ -1,0 +1,81 @@
+site_name: deeptool
+site_description: Object-oriented deep learning helpers for Jupyter notebooks
+site_url: https://sciencemj.github.io/deeptool/
+repo_url: https://github.com/sciencemj/deeptool
+repo_name: sciencemj/deeptool
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - search.suggest
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: 다크 모드
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: 라이트 모드
+
+nav:
+  - 홈: index.md
+  - 퀵스타트: quickstart.md
+  - 가이드:
+      - 모델: guide/module.md
+      - 데이터: guide/data.md
+      - 학습기: guide/trainer.md
+      - 최적 가중치와 조기 종료: guide/best.md
+      - 사후 평가: guide/evaluate.md
+  - API: api.md
+
+plugins:
+  - search
+  # api.md 는 두 언어 트리에 모두 렌더링되므로 같은 심볼의 앵커가 두 개 생긴다.
+  # resolve_closest 가 참조를 같은 언어 페이지로 보내 모호성을 없앤다.
+  - autorefs:
+      resolve_closest: true
+  - i18n:
+      docs_structure: suffix
+      languages:
+        - locale: ko
+          default: true
+          name: 한국어
+          build: true
+        - locale: en
+          name: English
+          build: true
+          nav_translations:
+            홈: Home
+            퀵스타트: Quickstart
+            가이드: Guide
+            모델: Model
+            데이터: Data
+            학습기: Trainer
+            최적 가중치와 조기 종료: Best weights & early stopping
+            사후 평가: Evaluation
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_root_heading: true
+            show_source: true
+            heading_level: 3
+            members_order: source
+            separate_signature: true
+            show_signature_annotations: true
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - toc:
+      permalink: true
