@@ -1,3 +1,4 @@
+import pytest
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -166,3 +167,119 @@ def test_load_checkpoint_without_optimizer_leaves_it_alone(tmp_path):
     meta = Trainer.load_checkpoint(path, LinReg(), optim=None)
 
     assert "epoch" in meta
+
+
+class ScriptedData(DataModule):
+    """검증 배치가 정확히 1개다. validation_step 호출 1회 = epoch 1회."""
+
+    def __init__(self, batch_size=4):
+        super().__init__()
+        self.save_hyperparameters()
+        torch.manual_seed(0)
+        self.X = torch.randn(16, 2)
+        self.y = self.X @ torch.tensor([[2.0], [-3.0]]) + 1.0
+
+    def get_dataloader(self, train):
+        idx = slice(0, 12) if train else slice(12, None)
+        return self.get_tensorloader((self.X, self.y), train, idx)
+
+
+class NoValData(DataModule):
+    """검증 로더가 없다."""
+
+    def __init__(self, batch_size=4):
+        super().__init__()
+        self.save_hyperparameters()
+        torch.manual_seed(0)
+        self.X = torch.randn(12, 2)
+        self.y = self.X @ torch.tensor([[2.0], [-3.0]]) + 1.0
+
+    def get_dataloader(self, train):
+        if not train:
+            return None
+        return self.get_tensorloader((self.X, self.y), train, slice(0, None))
+
+
+class ScriptedLoss(LinReg):
+    """검증 손실을 미리 정한 수열대로 돌려준다.
+
+    학습은 정상적으로 진행되므로 epoch 마다 가중치가 실제로 달라진다.
+    """
+
+    def __init__(self, losses, lr=0.1):
+        super().__init__()
+        self.save_hyperparameters()
+        self.call_count = 0
+
+
+@add_to_class(ScriptedLoss)
+def validation_step(self, batch):
+    loss = torch.tensor(self.losses[self.call_count])
+    self.call_count += 1
+    return loss
+
+
+def test_best_epoch_is_the_last_when_val_loss_decreases_monotonically():
+    trainer = Trainer(max_epochs=4, device="cpu", plot=False)
+    trainer.fit(ScriptedLoss([0.9, 0.7, 0.5, 0.3]), ScriptedData())
+
+    assert trainer.best_epoch == 3
+
+
+def test_best_epoch_points_at_the_minimum():
+    trainer = Trainer(max_epochs=4, device="cpu", plot=False)
+    trainer.fit(ScriptedLoss([0.5, 0.3, 0.7, 0.9]), ScriptedData())
+
+    assert trainer.best_epoch == 1
+    assert trainer.best_val_loss == pytest.approx(0.3)
+
+
+def test_best_val_loss_matches_the_history_minimum():
+    trainer = Trainer(max_epochs=4, device="cpu", plot=False)
+    trainer.fit(ScriptedLoss([0.5, 0.3, 0.7, 0.9]), ScriptedData())
+
+    assert trainer.best_val_loss == pytest.approx(min(trainer.history["val_loss"]))
+
+
+def test_fit_keeps_the_last_epoch_weights_until_restore_best():
+    """fit() 은 가중치를 자동 복원하지 않는다."""
+    model = ScriptedLoss([0.5, 0.3, 0.7, 0.9])
+    trainer = Trainer(max_epochs=4, device="cpu", plot=False)
+    trainer.fit(model, ScriptedData())
+    after_fit = {k: v.clone() for k, v in model.state_dict().items()}
+
+    assert trainer.restore_best() == 1
+
+    changed = any(
+        not torch.equal(after_fit[k], v) for k, v in model.state_dict().items()
+    )
+    assert changed
+
+
+def test_restore_best_before_fit_raises():
+    with pytest.raises(RuntimeError, match="아직 학습"):
+        Trainer(max_epochs=1, device="cpu", plot=False).restore_best()
+
+
+def test_restore_best_without_validation_data_raises():
+    trainer = Trainer(max_epochs=2, device="cpu", plot=False)
+    trainer.fit(LinReg(), NoValData())
+
+    with pytest.raises(RuntimeError, match="검증 데이터"):
+        trainer.restore_best()
+
+
+def test_best_is_tracked_even_when_snapshotting_is_off():
+    trainer = Trainer(max_epochs=4, device="cpu", plot=False, snapshot_best=False)
+    trainer.fit(ScriptedLoss([0.5, 0.3, 0.7, 0.9]), ScriptedData())
+
+    assert trainer.best_epoch == 1
+    assert trainer.best_val_loss == pytest.approx(0.3)
+
+
+def test_restore_best_with_snapshotting_off_reports_the_best_epoch():
+    trainer = Trainer(max_epochs=4, device="cpu", plot=False, snapshot_best=False)
+    trainer.fit(ScriptedLoss([0.5, 0.3, 0.7, 0.9]), ScriptedData())
+
+    with pytest.raises(RuntimeError, match="epoch 1"):
+        trainer.restore_best()

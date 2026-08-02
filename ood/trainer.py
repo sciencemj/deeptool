@@ -1,5 +1,7 @@
 """학습 루프 — 디바이스 배치, 에폭 반복, 손실 집계."""
 
+import copy
+
 import torch
 
 from ood.board import ProgressBoard
@@ -20,7 +22,8 @@ def default_device():
 class Trainer(HyperParameters):
     """``Module`` 과 ``DataModule`` 을 받아 학습을 돌린다."""
 
-    def __init__(self, max_epochs, device=None, gradient_clip_val=0, plot=True):
+    def __init__(self, max_epochs, device=None, gradient_clip_val=0, plot=True,
+                 snapshot_best=True):
         self.save_hyperparameters()
         self.device = torch.device(device) if device is not None else default_device()
         self.board = ProgressBoard(xlabel="epoch", ylabel="loss") if plot else None
@@ -28,6 +31,9 @@ class Trainer(HyperParameters):
         self.epoch = 0
         self.train_batch_idx = 0
         self.val_batch_idx = 0
+        self.best_val_loss = None
+        self.best_epoch = None
+        self._best_state = None
 
     def prepare_data(self, data):
         self.train_dataloader = data.train_dataloader()
@@ -83,11 +89,46 @@ class Trainer(HyperParameters):
                 loss = self.model.validation_step(self.prepare_batch(batch))
             self.val_batch_idx += 1
             losses.append(loss.detach().cpu().item())
-        self.history["val_loss"].append(sum(losses) / len(losses))
+        val_loss = sum(losses) / len(losses)
+        self.history["val_loss"].append(val_loss)
+        self._track_best(val_loss)
 
     def clip_gradients(self, grad_clip_val):
         params = [p for p in self.model.parameters() if p.requires_grad]
         torch.nn.utils.clip_grad_norm_(params, grad_clip_val)
+
+    def _track_best(self, val_loss):
+        """검증 손실이 최저를 갱신하면 기록하고 스냅샷을 뜬다.
+
+        ``snapshot_best=False`` 여도 ``best_val_loss``·``best_epoch`` 는 계속
+        기록한다. float 비교라 비용이 없고, "몇 번째가 최저였는가" 는 그 자체로
+        쓸모가 있다.
+        """
+        if self.best_val_loss is not None and val_loss >= self.best_val_loss:
+            return
+        self.best_val_loss = val_loss
+        self.best_epoch = self.epoch
+        if self.snapshot_best:
+            self._best_state = copy.deepcopy(self.model.state_dict())
+
+    def restore_best(self):
+        """최저 검증 손실 시점의 가중치로 되돌리고 그 epoch 를 반환한다.
+
+        모델 가중치만 되돌린다. optimizer 상태는 건드리지 않는다 — 목적이
+        "가장 좋은 모델로 평가·추론" 이지 학습 재개가 아니다.
+        """
+        if not hasattr(self, "model"):
+            raise RuntimeError("아직 학습하지 않았습니다.")
+        if self.best_epoch is None:
+            raise RuntimeError("검증 데이터가 없어 스냅샷이 없습니다.")
+        if not self.snapshot_best:
+            raise RuntimeError(
+                f"snapshot_best=False 로 학습해 스냅샷이 없습니다. "
+                f"(최저점은 epoch {self.best_epoch}, "
+                f"val_loss {self.best_val_loss:.4f} 이었습니다)"
+            )
+        self.model.load_state_dict(self._best_state)
+        return self.best_epoch
 
     def save_checkpoint(self, path):
         """모델·optimizer 상태와 에폭·하이퍼파라미터를 한 파일로 저장한다."""
