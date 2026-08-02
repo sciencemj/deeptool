@@ -1,7 +1,7 @@
-# ood
+# deeptool
 
-[![CI](https://github.com/sciencemj/ood-dl/actions/workflows/ci.yml/badge.svg)](https://github.com/sciencemj/ood-dl/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/ood-dl)](https://pypi.org/project/ood-dl/)
+[![CI](https://github.com/sciencemj/deeptool/actions/workflows/ci.yml/badge.svg)](https://github.com/sciencemj/deeptool/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/deeptool)](https://pypi.org/project/deeptool/)
 
 주피터 노트북에서 PyTorch 모델을 객체지향으로 다루기 위한 얇은 보조 라이브러리.
 
@@ -12,13 +12,11 @@
 ## 설치
 
 ```bash
-pip install ood-dl
+pip install deeptool
 ```
 
-배포 이름은 `ood-dl`, import 이름은 `ood` 다. PyPI 에 `ood` 이름이 이미 쓰이고 있어서다.
-
 ```python
-import ood as od
+import deeptool as dt
 ```
 
 이 저장소에서 직접 개발하려면:
@@ -34,10 +32,10 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-import ood as od
+import deeptool as dt
 
 
-class SyntheticRegression(od.DataModule):
+class SyntheticRegression(dt.DataModule):
     def __init__(self, n=200, batch_size=32):
         super().__init__()
         self.save_hyperparameters()
@@ -50,7 +48,7 @@ class SyntheticRegression(od.DataModule):
         return self.get_tensorloader((self.X, self.y), train, idx)
 
 
-class LinearRegression(od.Module):
+class LinearRegression(dt.Module):
     def __init__(self, lr=0.03):
         super().__init__()
         self.save_hyperparameters()
@@ -60,12 +58,12 @@ class LinearRegression(od.Module):
 다음 셀에서 메서드를 덧붙인다. 클래스를 다시 정의할 필요가 없다.
 
 ```python
-@od.add_to_class(LinearRegression)
+@dt.add_to_class(LinearRegression)
 def loss(self, y_hat, y):
     return F.mse_loss(y_hat, y)
 
 
-@od.add_to_class(LinearRegression)
+@dt.add_to_class(LinearRegression)
 def configure_optimizers(self):
     return torch.optim.SGD(self.parameters(), lr=self.lr)
 ```
@@ -73,7 +71,7 @@ def configure_optimizers(self):
 학습을 돌리면 손실 곡선이 셀 출력에 실시간으로 갱신된다.
 
 ```python
-trainer = od.Trainer(max_epochs=20)
+trainer = dt.Trainer(max_epochs=20)
 trainer.fit(LinearRegression(), SyntheticRegression())
 
 trainer.save_checkpoint("linreg.pt")
@@ -86,7 +84,7 @@ trainer.save_checkpoint("linreg.pt")
 개선이 멈출 때까지 돌리고 가장 좋았던 가중치를 쓴다.
 
 ```python
-trainer = od.Trainer(max_epochs=100, patience=5)
+trainer = dt.Trainer(max_epochs=100, patience=5)
 trainer.fit(model, data)
 
 len(trainer.history["val_loss"])             # 24 — 100까지 안 감
@@ -101,7 +99,7 @@ trainer.restore_best()                       # 18 을 반환
 기본은 메모리 스냅샷이다. 파일로 남기려면:
 
 ```python
-od.Trainer(max_epochs=100, patience=5, best_path="best.pt")
+dt.Trainer(max_epochs=100, patience=5, best_path="best.pt")
 ```
 
 파일에는 모델 가중치만 들어간다. optimizer 상태는 `restore_best()` 가 읽지 않는데
@@ -136,15 +134,15 @@ p.inputs[~p.correct]             # 틀린 샘플의 입력 — 시각화에 쓴�
 
 | 이름 | 역할 |
 |---|---|
-| `od.add_to_class(Class)` | 데코레이트한 함수를 `Class` 의 메서드로 등록 |
-| `od.HyperParameters` | `save_hyperparameters()` 로 `__init__` 인자를 속성 + `hparams` 로 저장 |
-| `od.DataModule` | `get_dataloader(train)` 하나만 구현하면 되는 데이터 규약 |
-| `od.Module` | `forward`/`loss`/`configure_optimizers` 를 채우는 모델 규약 |
-| `od.Trainer` | `fit(model, data)`, `predict(data)`, `restore_best()`, `save_checkpoint`, `load_checkpoint`, `history`, `best_epoch`, `best_val_loss` |
-| `od.predict` | 모델과 dataloader 를 받아 데이터셋 전체 예측을 모은다 |
-| `od.Predictions` | 예측 결과. `preds`·`probs`·`confidence`·`correct`·`accuracy` |
-| `od.ProgressBoard` | 라이브 손실 곡선. `Trainer(plot=True)` 가 자동으로 만든다 |
-| `od.default_device()` | `cuda` → `mps` → `cpu` |
+| `dt.add_to_class(Class)` | 데코레이트한 함수를 `Class` 의 메서드로 등록 |
+| `dt.HyperParameters` | `save_hyperparameters()` 로 `__init__` 인자를 속성 + `hparams` 로 저장 |
+| `dt.DataModule` | `get_dataloader(train)` 하나만 구현하면 되는 데이터 규약 |
+| `dt.Module` | `forward`/`loss`/`configure_optimizers` 를 채우는 모델 규약 |
+| `dt.Trainer` | `fit(model, data)`, `predict(data)`, `restore_best()`, `save_checkpoint`, `load_checkpoint`, `history`, `best_epoch`, `best_val_loss` |
+| `dt.predict` | 모델과 dataloader 를 받아 데이터셋 전체 예측을 모은다 |
+| `dt.Predictions` | 예측 결과. `preds`·`probs`·`confidence`·`correct`·`accuracy` |
+| `dt.ProgressBoard` | 라이브 손실 곡선. `Trainer(plot=True)` 가 자동으로 만든다 |
+| `dt.default_device()` | `cuda` → `mps` → `cpu` |
 
 ## 개발
 

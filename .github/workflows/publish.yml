@@ -19,14 +19,14 @@ jobs:
           TAG="${GITHUB_REF_NAME#v}"
           # sed 를 쓰는 이유: BSD/GNU 양쪽에서 같게 동작해 개발 머신(macOS)에서
           # 그대로 검증할 수 있다. grep -oP 는 macOS 기본 grep 에 없어 검증이 안 된다.
-          VERSION="$(sed -n 's/^__version__ = "\(.*\)"/\1/p' ood/__init__.py)"
+          VERSION="$(sed -n 's/^__version__ = "\(.*\)"/\1/p' deeptool/__init__.py)"
           echo "tag=$TAG version=$VERSION"
           if [ -z "$VERSION" ]; then
-            echo "::error::ood/__init__.py 에서 __version__ 을 읽지 못했습니다"
+            echo "::error::deeptool/__init__.py 에서 __version__ 을 읽지 못했습니다"
             exit 1
           fi
           if [ "$TAG" != "$VERSION" ]; then
-            echo "::error::릴리스 태그 $TAG 와 ood/__init__.py 의 __version__ $VERSION 이 다릅니다"
+            echo "::error::릴리스 태그 $TAG 와 deeptool/__init__.py 의 __version__ $VERSION 이 다릅니다"
             exit 1
           fi
 
