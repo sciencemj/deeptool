@@ -137,18 +137,25 @@ def validation_step(self, batch):
     y_hat = self(*batch[:-1])
     loss = self.loss(y_hat, batch[-1])
     self.plot('loss', loss, train=False)
-    self.plot('acc', (y_hat.argmax(-1) == batch[-1]).float().mean(), train=False)
+    self.log('acc', (y_hat.argmax(-1) == batch[-1]).float().mean())
     return loss
 ```
 
-Scalars sent to `plot` share the board with a different color and line style.
+Scalars sent to `log` are averaged into `trainer.history['acc']` once per epoch.
+When a board exists, the current train/eval state also selects a live curve. A
+Trainer with `log_dir` writes the exact key `acc` to `history.jsonl` as well.
+
+Using the same key in both training and validation combines all observations
+into one epoch average. Name them `train_acc` and `val_acc` yourself when they
+must stay separate. deeptool does not interpret domain metric names.
+
 The return value must still be the loss — `Trainer` uses it to fill `history`
 and to decide the best epoch.
 
 !!! note "`plot` does not reach `history`"
-    `plot` only draws. `trainer.history` accumulates `train_loss` and
-    `val_loss` only. To keep accuracy as numbers, collect it yourself, or use
-    [`trainer.predict(data).accuracy`](evaluate.md) after training.
+    Use `plot(key, value, train)` when a curve is enough and `log(key, value)`
+    when the number must be retained. `epoch`, `train_loss`, `val_loss`, `lr`,
+    and `sec` are reserved for Trainer-generated fields.
 
 ## Next
 

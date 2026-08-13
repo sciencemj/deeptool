@@ -18,7 +18,7 @@ dt.Trainer(max_epochs=20, patience=3).hparams
 ```
 {'max_epochs': 20, 'device': None, 'gradient_clip_val': 0, 'plot': True,
  'snapshot_best': True, 'best_path': None, 'best_with_optim': False,
- 'patience': 3}
+ 'patience': 3, 'log_dir': None}
 ```
 
 ## Device selection
@@ -69,6 +69,72 @@ len(trainer.history["train_loss"]) < trainer.max_epochs   # True means it stoppe
 ```
 
 Without validation data, `val_loss` stays an empty list.
+
+When a model calls `self.log("iou", value)`, the epoch average of that custom
+metric enters the same dict. An epoch with no observation gets `None` to keep
+positions aligned.
+
+## Persisting training runs
+
+```python
+trainer = dt.Trainer(max_epochs=50, plot=False, log_dir="runs/exp1")
+trainer.fit(model, data)
+```
+
+Every completed epoch appends and immediately flushes one JSONL line.
+
+```
+runs/exp1/
+  meta.json
+  history.jsonl
+```
+
+`meta.json` contains the start time, resolved device, model class, and Trainer
+and model hyperparameters. Each `history.jsonl` row has a free-form schema:
+
+```json
+{"epoch": 0, "train_loss": 2.4724, "val_loss": 2.3155, "iou": 0.3248, "lr": 0.001, "sec": 116.2}
+```
+
+If the process dies during the next epoch, all completed lines remain. A plain
+script also prints these fields once per epoch, but only when `log_dir` is set.
+Notebooks retain the live board without those lines. With `log_dir=None`, both
+files and epoch output remain disabled.
+
+Load several runs and overlay them one figure per metric:
+
+```python
+runs = dt.load_runs("runs")
+figures = dt.plot_runs(runs)
+```
+
+`load_runs` returns `{run_name: {metric_name: [values, ...]}}`. Metrics present
+in only some models need no shared schema; a value absent from an intermediate
+epoch is aligned with `None`. `plot_runs` returns one open Matplotlib Figure for
+every metric except `epoch`.
+
+## Learning-rate schedulers
+
+`configure_optimizers()` may return the existing optimizer-only result or an
+`(optimizer, scheduler)` pair.
+
+```python
+def configure_optimizers(self):
+    optim = torch.optim.Adam(self.parameters(), lr=self.lr)
+    scheduler = torch.optim.lr_scheduler.StepLR(
+        optim, step_size=10, gamma=0.1
+    )
+    return optim, scheduler
+```
+
+A normal scheduler receives one `step()` after training, validation, and run
+recording for the epoch. The row's `lr` is therefore the value actually used in
+that epoch; a changed value first appears in the next row.
+
+`ReduceLROnPlateau` instead receives `scheduler.step(val_loss)`. Because it
+needs that measurement, using it without a validation dataloader raises
+`ValueError` before training. Batch-stepped schedulers such as `OneCycleLR` and
+AMP are not supported yet.
 
 ## Automatic lazy materialization
 
@@ -148,8 +214,9 @@ What `fit()` does, in order:
 2. Rejects `patience` without validation data, right here
 3. Injects `model.trainer` and `model.board`
 4. Materializes lazy parameters with a dummy forward
-5. Builds the optimizer via `model.configure_optimizers()`
-6. Epoch loop — train, validate, check for a new best, check early stopping
+5. Builds the optimizer and optional scheduler via `configure_optimizers()`
+6. Writes run metadata when recording is enabled
+7. Epoch loop — train, validate, update best, record, step scheduler, stop early
 
 One epoch (`fit_epoch`) walks the training batches calling `training_step`,
 then the validation batches calling `validation_step` under `torch.no_grad()`.
@@ -157,5 +224,5 @@ Switching between `model.train()` and `model.eval()` happens there too.
 
 ## Next
 
-- [Best weights & early stopping](best.md) — step 6's best-epoch logic
+- [Best weights & early stopping](best.md) — step 7's best-epoch logic
 - [Evaluation](evaluate.md) — after training finishes

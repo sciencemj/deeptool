@@ -134,18 +134,25 @@ def validation_step(self, batch):
     y_hat = self(*batch[:-1])
     loss = self.loss(y_hat, batch[-1])
     self.plot('loss', loss, train=False)
-    self.plot('acc', (y_hat.argmax(-1) == batch[-1]).float().mean(), train=False)
+    self.log('acc', (y_hat.argmax(-1) == batch[-1]).float().mean())
     return loss
 ```
 
-`plot`으로 찍은 스칼라는 같은 보드에 다른 색·선스타일로 그려진다.
+`log`로 찍은 스칼라는 에폭 평균으로 `trainer.history['acc']`에 남고, 보드가
+있으면 현재 train/eval 상태를 보고 곡선도 함께 그린다. `log_dir`을 준
+Trainer라면 `history.jsonl`에도 이름 그대로 `acc` 열이 생긴다.
+
+같은 키를 학습과 검증 양쪽에서 쓰면 한 에폭 평균으로 합쳐진다. 따로 보관하려면
+`train_acc`, `val_acc`처럼 모델이 직접 이름을 나눈다. deeptool은 지표 이름의
+뜻을 검사하지 않는다.
+
 반환값은 여전히 손실이어야 한다. `Trainer`가 이것으로 `history`를 채우고
 최저점을 판정하기 때문이다.
 
 !!! note "`plot`은 `history`에 남지 않는다"
-    `plot`은 그림만 그린다. `trainer.history`에는 `train_loss`와
-    `val_loss`만 쌓인다. 정확도를 숫자로 보관하려면 직접 리스트에 모으거나,
-    학습이 끝난 뒤 [`trainer.predict(data).accuracy`](evaluate.md)를 쓴다.
+    그림만 필요하면 기존 `plot(key, value, train)`을 쓴다. 숫자도 보관하려면
+    `log(key, value)`를 쓴다. `epoch`, `train_loss`, `val_loss`, `lr`, `sec`는
+    Trainer가 기록하는 예약 이름이다.
 
 ## 다음
 

@@ -45,6 +45,15 @@
       members:
         - ProgressBoard
 
+## Run recording
+
+::: deeptool.record
+    options:
+      members:
+        - RunRecorder
+        - load_runs
+        - plot_runs
+
 ## Checkpointing
 
 ::: deeptool.checkpoint

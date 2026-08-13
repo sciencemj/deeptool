@@ -9,7 +9,7 @@
 
 모델은 유저가 PyTorch로 직접 작성한다. 이 라이브러리는 그 주변만 담당한다 —
 하이퍼파라미터 자동 저장, 셀 간 메서드 추가, 학습 중 손실 곡선 라이브 렌더링,
-디바이스 자동 선택, 체크포인트.
+디바이스 자동 선택, 학습 기록 영속화, 체크포인트.
 
 ## 설치
 
@@ -82,6 +82,49 @@ trainer.save_checkpoint("linreg.pt")
 
 전체 예제는 [`examples/quickstart.ipynb`](examples/quickstart.ipynb) 참고.
 
+### 학습 기록과 실행 비교
+
+`log_dir`을 주면 메타데이터와 완료된 에폭을 즉시 디스크에 남긴다.
+
+```python
+trainer = dt.Trainer(max_epochs=50, plot=False, log_dir="runs/exp1")
+trainer.fit(model, data)
+```
+
+모델 안의 사용자 지표는 이름을 그대로 쓴다. 같은 에폭에서 여러 번 부르면
+평균 한 점이 된다.
+
+```python
+self.log("iou", value)
+```
+
+실행마다 `meta.json`과 append-only `history.jsonl`이 생긴다. 스크립트에서는
+`log_dir`을 준 경우에만 에폭당 한 줄도 출력한다. 기록 중이거나 중간에 멈춘
+실행도 완료된 줄까지 읽고 비교할 수 있다.
+
+```python
+runs = dt.load_runs("runs")
+figures = dt.plot_runs(runs)
+```
+
+`plot_runs`는 지표마다 Figure 하나를 만들고 그 지표가 있는 실행만 겹쳐 그린다.
+모델마다 지표 이름이 달라도 별도 스키마가 필요 없다.
+
+### 학습률 스케줄러
+
+에폭 기반 scheduler는 optimizer와 함께 반환한다.
+
+```python
+def configure_optimizers(self):
+    optim = torch.optim.Adam(self.parameters(), lr=self.lr)
+    scheduler = torch.optim.lr_scheduler.StepLR(optim, step_size=10, gamma=0.1)
+    return optim, scheduler
+```
+
+일반 scheduler는 에폭 뒤 `step()`, `ReduceLROnPlateau`는 검증 뒤
+`step(val_loss)`로 호출된다. 매 배치 호출이 필요한 `OneCycleLR`와 AMP는 아직
+지원하지 않는다.
+
 ### 조기 종료와 최적 가중치
 
 개선이 멈출 때까지 돌리고 가장 좋았던 가중치를 쓴다.
@@ -145,6 +188,9 @@ p.inputs[~p.correct]             # 틀린 샘플의 입력 — 시각화에 쓴�
 | `dt.predict` | 모델과 dataloader 를 받아 데이터셋 전체 예측을 모은다 |
 | `dt.Predictions` | 예측 결과. `preds`·`probs`·`confidence`·`correct`·`accuracy` |
 | `dt.ProgressBoard` | 라이브 손실 곡선. `Trainer(plot=True)` 가 자동으로 만든다 |
+| `dt.RunRecorder` | 한 실행의 `meta.json`과 `history.jsonl` 기록 |
+| `dt.load_runs` | 여러 실행의 자유형 JSONL 지표를 로드 |
+| `dt.plot_runs` | 지표별 실행 비교 Figure 목록 생성 |
 | `dt.default_device()` | `cuda` → `mps` → `cpu` |
 
 ## 개발
