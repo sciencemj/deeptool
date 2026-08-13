@@ -1,3 +1,6 @@
+import json
+from datetime import datetime
+
 import pytest
 import torch
 from torch import nn
@@ -69,6 +72,13 @@ class ReservedMetricLinReg(LinReg):
         return loss
 
 
+class FailsOnSecondEpoch(LinReg):
+    def training_step(self, batch):
+        if self.trainer.epoch == 1:
+            raise RuntimeError("planned failure")
+        return super().training_step(batch)
+
+
 def test_default_device_returns_a_torch_device():
     assert isinstance(default_device(), torch.device)
 
@@ -112,6 +122,91 @@ def test_log_rejects_trainer_row_names():
 
     with pytest.raises(ValueError, match="reserved"):
         trainer.fit(ReservedMetricLinReg(), LinearData())
+
+
+def test_log_dir_records_metadata_and_complete_epoch_rows(tmp_path, capsys):
+    log_dir = tmp_path / "exp1"
+    trainer = Trainer(max_epochs=2, device="cpu", plot=False, log_dir=log_dir)
+    trainer.fit(MetricLinReg(), LinearData())
+
+    meta = json.loads((log_dir / "meta.json").read_text())
+    rows = [
+        json.loads(line)
+        for line in (log_dir / "history.jsonl").read_text().splitlines()
+    ]
+
+    assert meta["device"] == "cpu"
+    assert meta["model_class"].endswith(".MetricLinReg")
+    assert datetime.fromisoformat(meta["started_at"]).tzinfo is not None
+    assert set(meta) == {
+        "started_at",
+        "device",
+        "model_class",
+        "trainer_hparams",
+        "model_hparams",
+    }
+    assert len(rows) == 2
+    assert list(rows[0]) == [
+        "epoch",
+        "train_loss",
+        "val_loss",
+        "iou",
+        "lr",
+        "sec",
+    ]
+    assert rows[0]["epoch"] == 0
+    assert rows[0]["iou"] == pytest.approx(0.3)
+    assert rows[0]["lr"] == pytest.approx(0.1)
+    assert rows[0]["sec"] >= 0
+    assert len(capsys.readouterr().out.splitlines()) == 2
+
+
+def test_log_dir_none_remains_silent(capsys):
+    Trainer(max_epochs=1, device="cpu", plot=False).fit(LinReg(), LinearData())
+
+    assert capsys.readouterr().out == ""
+
+
+def test_logged_notebook_run_does_not_print(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr("deeptool.trainer._in_notebook", lambda: True)
+    trainer = Trainer(
+        max_epochs=1,
+        device="cpu",
+        plot=False,
+        log_dir=tmp_path / "exp",
+    )
+    trainer.fit(LinReg(), LinearData())
+
+    assert capsys.readouterr().out == ""
+
+
+def test_completed_rows_survive_a_later_training_failure(tmp_path):
+    trainer = Trainer(
+        max_epochs=3,
+        device="cpu",
+        plot=False,
+        log_dir=tmp_path / "exp",
+    )
+
+    with pytest.raises(RuntimeError, match="planned failure"):
+        trainer.fit(FailsOnSecondEpoch(), LinearData())
+
+    rows = (tmp_path / "exp" / "history.jsonl").read_text().splitlines()
+    assert len(rows) == 1
+    assert json.loads(rows[0])["epoch"] == 0
+
+
+def test_script_board_accumulates_without_creating_figures(tmp_path):
+    trainer = Trainer(
+        max_epochs=1,
+        device="cpu",
+        plot=True,
+        log_dir=tmp_path / "exp",
+    )
+    trainer.fit(LinReg(), LinearData())
+
+    assert trainer.board.data["train_loss"]
+    assert trainer.board.fig is None
 
 
 def test_fit_reduces_training_loss():

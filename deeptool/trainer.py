@@ -1,17 +1,20 @@
 """Training loop: device placement, epochs, loss aggregation, early stopping."""
 
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 import torch
 
-from deeptool.board import ProgressBoard
+from deeptool.board import ProgressBoard, _in_notebook
 from deeptool.checkpoint import BestSnapshot
 from deeptool.core import HyperParameters
 from deeptool.data import DataModule
 from deeptool.evaluate import Predictions
 from deeptool.module import Module
+from deeptool.record import RunRecorder
 # 아래 셋은 Trainer 의 동명 메서드와 겹치므로 별칭으로 가져온다.
 from deeptool.checkpoint import load_checkpoint as _load_checkpoint
 from deeptool.checkpoint import save_checkpoint as _save_checkpoint
@@ -49,6 +52,7 @@ class Trainer(HyperParameters):
             can resume training.
         patience: Stops after this many epochs without improvement. Requires
             validation data.
+        log_dir: Writes run metadata and one flushed JSONL row per epoch here.
 
     Raises:
         ValueError: If `patience` is below 1.
@@ -62,14 +66,19 @@ class Trainer(HyperParameters):
                  snapshot_best: bool = True,
                  best_path: str | Path | None = None,
                  best_with_optim: bool = False,
-                 patience: int | None = None) -> None:
+                 patience: int | None = None,
+                 log_dir: str | Path | None = None) -> None:
         self.save_hyperparameters()
         # patience=0 이면 최저점 epoch 에서도 epoch - best_epoch >= 0 이 참이 되어
         # 첫 epoch 직후 멈춘다. 의미가 없으므로 막는다.
         if patience is not None and patience < 1:
             raise ValueError(f"patience must be at least 1 (got {patience})")
         self.device = torch.device(device) if device is not None else default_device()
-        self.board = ProgressBoard(xlabel="epoch", ylabel="loss") if plot else None
+        self.board = (
+            ProgressBoard(xlabel="epoch", ylabel="loss", display=_in_notebook())
+            if plot else None
+        )
+        self.recorder = RunRecorder(log_dir) if log_dir is not None else None
         self.history = {"train_loss": [], "val_loss": []}
         self.epoch = 0
         self.train_batch_idx = 0
@@ -124,13 +133,46 @@ class Trainer(HyperParameters):
         self.prepare_model(model)
         self.materialize_lazy_parameters()
         self.optim = self.model.configure_optimizers()
+        self._record_meta()
         for self.epoch in range(self.max_epochs):
+            started = perf_counter()
             self._epoch_scalars = {}
             self.fit_epoch()
-            self._finish_logged_scalars()
+            metrics = self._finish_logged_scalars()
+            self._record_epoch(metrics, perf_counter() - started)
             if self._should_stop_early():
                 break
         return self.history
+
+    def _record_meta(self) -> None:
+        if self.recorder is None:
+            return
+        model_class = type(self.model)
+        self.recorder.meta(
+            started_at=datetime.now(UTC).isoformat(),
+            device=str(self.device),
+            model_class=f"{model_class.__module__}.{model_class.__qualname__}",
+            trainer_hparams=self.hparams,
+            model_hparams=getattr(self.model, "hparams", {}),
+        )
+
+    def _record_epoch(self, metrics: dict[str, float], seconds: float) -> None:
+        if self.recorder is None:
+            return
+        row: dict[str, object] = {
+            "epoch": self.epoch,
+            "train_loss": self.history["train_loss"][-1],
+        }
+        if self.num_val_batches > 0:
+            row["val_loss"] = self.history["val_loss"][-1]
+        row.update(metrics)
+        row["lr"] = float(self.optim.param_groups[0]["lr"])
+        row["sec"] = float(seconds)
+        self.recorder.epoch(**row)
+        if not _in_notebook():
+            print(" ".join(
+                f"{key}={_format_scalar(value)}" for key, value in row.items()
+            ))
 
     def _log_scalar(self, key: str, value: float) -> None:
         if key in self._ROW_FIELDS:
@@ -247,3 +289,9 @@ class Trainer(HyperParameters):
         """
         loader = data.train_dataloader() if train else data.val_dataloader()
         return _predict(self.model, loader, self.device, keep_inputs)
+
+
+def _format_scalar(value: object) -> str:
+    if isinstance(value, float):
+        return f"{value:.6g}"
+    return str(value)
