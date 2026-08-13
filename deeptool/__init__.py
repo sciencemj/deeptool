@@ -13,7 +13,7 @@ from deeptool.module import Module
 from deeptool.record import RunRecorder, load_runs, plot_runs
 from deeptool.trainer import Trainer, default_device
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "DataModule",
