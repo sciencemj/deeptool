@@ -35,6 +35,30 @@ class Module(nn.Module, HyperParameters):
     def configure_optimizers(self) -> torch.optim.Optimizer:
         raise NotImplementedError
 
+    def log(self, key: str, value: torch.Tensor | float) -> None:
+        """Aggregate one custom scalar under its unchanged name for this epoch.
+
+        When a live board is attached, the same value is also plotted using the
+        model's current training or validation phase. Calling this method before
+        a Trainer is attached is a no-op.
+
+        Args:
+            key: Free-form metric name stored in epoch history.
+            value: A scalar tensor or plain number.
+
+        Raises:
+            ValueError: If `value` is not scalar or `key` is reserved by Trainer.
+        """
+        if self.trainer is None:
+            return
+        if torch.is_tensor(value):
+            if value.numel() != 1:
+                raise ValueError("logged tensors must contain one scalar value")
+            value = value.detach().cpu().item()
+        scalar = float(value)
+        self.trainer._log_scalar(key, scalar)
+        self.plot(key, scalar, train=self.training)
+
     def plot(self, key: str, value: torch.Tensor | float, train: bool) -> None:
         """Draw one scalar on the live board. A no-op when there is no board.
 

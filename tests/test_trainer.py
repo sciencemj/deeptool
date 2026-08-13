@@ -46,6 +46,29 @@ class LazyLinReg(LinReg):
         self.net = nn.LazyLinear(1)
 
 
+class MetricLinReg(LinReg):
+    def training_step(self, batch):
+        loss = super().training_step(batch)
+        self.log("iou", torch.tensor(0.2))
+        self.log("iou", 0.4)
+        return loss
+
+
+class LateMetricLinReg(LinReg):
+    def training_step(self, batch):
+        loss = super().training_step(batch)
+        if self.trainer.epoch == 1:
+            self.log("iou", 0.4)
+        return loss
+
+
+class ReservedMetricLinReg(LinReg):
+    def training_step(self, batch):
+        loss = super().training_step(batch)
+        self.log("lr", 0.4)
+        return loss
+
+
 def test_default_device_returns_a_torch_device():
     assert isinstance(default_device(), torch.device)
 
@@ -60,6 +83,35 @@ def test_fit_records_one_loss_per_epoch():
 
     assert len(history["train_loss"]) == 3
     assert len(history["val_loss"]) == 3
+
+
+def test_log_averages_arbitrary_scalars_per_epoch():
+    trainer = Trainer(max_epochs=2, device="cpu", plot=False)
+    trainer.fit(MetricLinReg(), LinearData())
+
+    assert trainer.history["iou"] == pytest.approx([0.3, 0.3])
+
+
+def test_log_aligns_a_metric_that_appears_in_a_later_epoch():
+    trainer = Trainer(max_epochs=2, device="cpu", plot=False)
+    trainer.fit(LateMetricLinReg(), LinearData())
+
+    assert trainer.history["iou"] == [None, pytest.approx(0.4)]
+
+
+def test_log_uses_original_name_for_history_and_phase_prefix_for_board():
+    trainer = Trainer(max_epochs=1, device="cpu", plot=True)
+    trainer.fit(MetricLinReg(), LinearData())
+
+    assert "iou" in trainer.history
+    assert "train_iou" in trainer.board.data
+
+
+def test_log_rejects_trainer_row_names():
+    trainer = Trainer(max_epochs=1, device="cpu", plot=False)
+
+    with pytest.raises(ValueError, match="reserved"):
+        trainer.fit(ReservedMetricLinReg(), LinearData())
 
 
 def test_fit_reduces_training_loss():

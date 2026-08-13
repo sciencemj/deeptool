@@ -9,10 +9,15 @@ from deeptool.module import Module
 
 
 class FakeTrainer:
-    train_batch_idx = 4
-    num_train_batches = 8
-    num_val_batches = 2
-    epoch = 0
+    def __init__(self):
+        self.train_batch_idx = 4
+        self.num_train_batches = 8
+        self.num_val_batches = 2
+        self.epoch = 0
+        self.logged = []
+
+    def _log_scalar(self, key, value):
+        self.logged.append((key, value))
 
 
 class ToyNet(Module):
@@ -109,3 +114,27 @@ def test_plot_accepts_plain_floats():
     model.plot("acc", 0.75, train=True)
 
     assert model.board.raw_points["train_acc"] == [(0.5, 0.75)]
+
+
+def test_log_is_a_noop_without_a_trainer():
+    ToyNet().log("iou", 0.75)  # 예외 없이 통과
+
+
+def test_log_preserves_the_recorded_name_and_prefixes_only_the_board():
+    model = ToyNet()
+    model.board = ProgressBoard(display=False)
+    model.trainer = FakeTrainer()
+    model.train()
+
+    model.log("iou", torch.tensor(0.75))
+
+    assert model.trainer.logged == [("iou", 0.75)]
+    assert model.board.raw_points["train_iou"] == [(0.5, 0.75)]
+
+
+def test_log_rejects_non_scalar_tensors():
+    model = ToyNet()
+    model.trainer = FakeTrainer()
+
+    with pytest.raises(ValueError, match="scalar"):
+        model.log("iou", torch.tensor([0.2, 0.4]))

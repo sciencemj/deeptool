@@ -54,6 +54,8 @@ class Trainer(HyperParameters):
         ValueError: If `patience` is below 1.
     """
 
+    _ROW_FIELDS = frozenset({"epoch", "train_loss", "val_loss", "lr", "sec"})
+
     def __init__(self, max_epochs: int,
                  device: torch.device | str | None = None,
                  gradient_clip_val: float = 0, plot: bool = True,
@@ -72,6 +74,8 @@ class Trainer(HyperParameters):
         self.epoch = 0
         self.train_batch_idx = 0
         self.val_batch_idx = 0
+        self._epoch_scalars: dict[str, list[float]] = {}
+        self._logged_metric_names: list[str] = []
         self._best = BestSnapshot(snapshot_best, best_path, best_with_optim)
 
     @property
@@ -110,7 +114,8 @@ class Trainer(HyperParameters):
         with torch.no_grad():
             self.model(*batch[:-1])
 
-    def fit(self, model: Module, data: DataModule) -> dict[str, list[float]]:
+    def fit(self, model: Module,
+            data: DataModule) -> dict[str, list[float | None]]:
         self.prepare_data(data)
         # 검증 데이터가 없으면 best_epoch 가 계속 None 이라 조기 종료가 영원히
         # 발동하지 않는다. 조용히 무시하면 왜 안 멈추는지 알 수 없으므로 막는다.
@@ -120,10 +125,32 @@ class Trainer(HyperParameters):
         self.materialize_lazy_parameters()
         self.optim = self.model.configure_optimizers()
         for self.epoch in range(self.max_epochs):
+            self._epoch_scalars = {}
             self.fit_epoch()
+            self._finish_logged_scalars()
             if self._should_stop_early():
                 break
         return self.history
+
+    def _log_scalar(self, key: str, value: float) -> None:
+        if key in self._ROW_FIELDS:
+            raise ValueError(f"{key!r} is reserved for Trainer epoch rows")
+        self._epoch_scalars.setdefault(key, []).append(value)
+
+    def _finish_logged_scalars(self) -> dict[str, float]:
+        metrics = {
+            key: sum(values) / len(values)
+            for key, values in self._epoch_scalars.items()
+        }
+        for key in self._logged_metric_names:
+            if key not in metrics:
+                self.history[key].append(None)
+        for key, value in metrics.items():
+            if key not in self._logged_metric_names:
+                self._logged_metric_names.append(key)
+                self.history[key] = [None] * self.epoch
+            self.history[key].append(value)
+        return metrics
 
     def fit_epoch(self) -> None:
         self.model.train()
