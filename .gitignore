@@ -7,4 +7,5 @@ data/
 .ipynb_checkpoints/
 *.pt
 .superpowers/
+.worktrees/
 site/
