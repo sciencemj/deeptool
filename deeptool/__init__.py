@@ -10,6 +10,7 @@ from deeptool.core import HyperParameters, add_to_class
 from deeptool.data import DataModule
 from deeptool.evaluate import Predictions, predict
 from deeptool.module import Module
+from deeptool.record import RunRecorder, load_runs, plot_runs
 from deeptool.trainer import Trainer, default_device
 
 __version__ = "0.2.0"
@@ -20,9 +21,12 @@ __all__ = [
     "Module",
     "Predictions",
     "ProgressBoard",
+    "RunRecorder",
     "Trainer",
     "add_to_class",
     "default_device",
+    "load_runs",
+    "plot_runs",
     "predict",
     "__version__",
 ]
