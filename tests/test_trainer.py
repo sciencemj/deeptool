@@ -79,6 +79,24 @@ class FailsOnSecondEpoch(LinReg):
         return super().training_step(batch)
 
 
+class StepScheduledLinReg(LinReg):
+    def configure_optimizers(self):
+        optim = torch.optim.SGD(self.parameters(), lr=0.1)
+        scheduler = torch.optim.lr_scheduler.StepLR(
+            optim,
+            step_size=1,
+            gamma=0.1,
+        )
+        return optim, scheduler
+
+
+class InvalidOptimizerConfig(LinReg):
+    def configure_optimizers(self):
+        optim = torch.optim.SGD(self.parameters(), lr=0.1)
+        scheduler = torch.optim.lr_scheduler.StepLR(optim, step_size=1)
+        return optim, scheduler, "extra"
+
+
 def test_default_device_returns_a_torch_device():
     assert isinstance(default_device(), torch.device)
 
@@ -207,6 +225,29 @@ def test_script_board_accumulates_without_creating_figures(tmp_path):
 
     assert trainer.board.data["train_loss"]
     assert trainer.board.fig is None
+
+
+def test_epoch_scheduler_changes_next_epochs_recorded_lr(tmp_path):
+    trainer = Trainer(
+        max_epochs=2,
+        device="cpu",
+        plot=False,
+        log_dir=tmp_path / "exp",
+    )
+    trainer.fit(StepScheduledLinReg(), LinearData())
+
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / "exp" / "history.jsonl").read_text().splitlines()
+    ]
+    assert [row["lr"] for row in rows] == pytest.approx([0.1, 0.01])
+
+
+def test_invalid_optimizer_scheduler_tuple_is_rejected():
+    trainer = Trainer(max_epochs=1, device="cpu", plot=False)
+
+    with pytest.raises(ValueError, match="optimizer.*scheduler"):
+        trainer.fit(InvalidOptimizerConfig(), LinearData())
 
 
 def test_fit_reduces_training_loss():
@@ -364,6 +405,48 @@ def validation_step(self, batch):
     loss = torch.tensor(self.losses[self.call_count])
     self.call_count += 1
     return loss
+
+
+class PlateauScriptedLoss(ScriptedLoss):
+    def configure_optimizers(self):
+        optim = torch.optim.SGD(self.parameters(), lr=0.1)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optim,
+            mode="min",
+            patience=0,
+            factor=0.1,
+        )
+        return optim, scheduler
+
+
+class PlateauLinReg(LinReg):
+    def configure_optimizers(self):
+        optim = torch.optim.SGD(self.parameters(), lr=0.1)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optim)
+        return optim, scheduler
+
+
+def test_plateau_scheduler_uses_validation_loss(tmp_path):
+    trainer = Trainer(
+        max_epochs=3,
+        device="cpu",
+        plot=False,
+        log_dir=tmp_path / "exp",
+    )
+    trainer.fit(PlateauScriptedLoss([0.5, 0.7, 0.8]), ScriptedData())
+
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / "exp" / "history.jsonl").read_text().splitlines()
+    ]
+    assert [row["lr"] for row in rows] == pytest.approx([0.1, 0.1, 0.01])
+
+
+def test_plateau_scheduler_requires_validation_data():
+    trainer = Trainer(max_epochs=1, device="cpu", plot=False)
+
+    with pytest.raises(ValueError, match="validation data"):
+        trainer.fit(PlateauLinReg(), NoValData())
 
 
 def test_best_epoch_is_the_last_when_val_loss_decreases_monotonically():

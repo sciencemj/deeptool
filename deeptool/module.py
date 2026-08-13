@@ -32,7 +32,23 @@ class Module(nn.Module, HyperParameters):
     def loss(self, y_hat: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
 
-    def configure_optimizers(self) -> torch.optim.Optimizer:
+    def configure_optimizers(
+        self,
+    ) -> (
+        torch.optim.Optimizer
+        | tuple[
+            torch.optim.Optimizer,
+            torch.optim.lr_scheduler.LRScheduler
+            | torch.optim.lr_scheduler.ReduceLROnPlateau,
+        ]
+    ):
+        """Build an optimizer and, optionally, an epoch-stepped scheduler.
+
+        Returns:
+            An optimizer, or `(optimizer, scheduler)`. The Trainer steps normal
+            schedulers after every epoch and gives validation loss to
+            `ReduceLROnPlateau`. Batch-stepped schedulers are not supported.
+        """
         raise NotImplementedError
 
     def log(self, key: str, value: torch.Tensor | float) -> None:

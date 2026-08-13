@@ -132,7 +132,10 @@ class Trainer(HyperParameters):
             raise ValueError("patience needs validation data.")
         self.prepare_model(model)
         self.materialize_lazy_parameters()
-        self.optim = self.model.configure_optimizers()
+        self._configure_optimizers()
+        plateau = torch.optim.lr_scheduler.ReduceLROnPlateau
+        if isinstance(self.scheduler, plateau) and self.num_val_batches == 0:
+            raise ValueError("ReduceLROnPlateau needs validation data.")
         self._record_meta()
         for self.epoch in range(self.max_epochs):
             started = perf_counter()
@@ -140,9 +143,31 @@ class Trainer(HyperParameters):
             self.fit_epoch()
             metrics = self._finish_logged_scalars()
             self._record_epoch(metrics, perf_counter() - started)
+            self._step_scheduler()
             if self._should_stop_early():
                 break
         return self.history
+
+    def _configure_optimizers(self) -> None:
+        configured = self.model.configure_optimizers()
+        if isinstance(configured, tuple):
+            if len(configured) != 2:
+                raise ValueError(
+                    "configure_optimizers must return an optimizer or an "
+                    "(optimizer, scheduler) pair"
+                )
+            self.optim, self.scheduler = configured
+        else:
+            self.optim = configured
+            self.scheduler = None
+
+    def _step_scheduler(self) -> None:
+        if isinstance(
+            self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau
+        ):
+            self.scheduler.step(self.history["val_loss"][-1])
+        elif self.scheduler is not None:
+            self.scheduler.step()
 
     def _record_meta(self) -> None:
         if self.recorder is None:
