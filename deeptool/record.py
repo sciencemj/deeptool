@@ -119,6 +119,5 @@ def plot_runs(source: str | Path | Mapping[str, Mapping[str, list[Any]]]
         axes.set_ylabel(metric)
         axes.grid(True)
         axes.legend()
-        plt.close(figure)
         figures.append(figure)
     return figures

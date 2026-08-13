@@ -1,5 +1,6 @@
 import json
 
+from matplotlib import pyplot as plt
 from matplotlib.figure import Figure
 import pytest
 
@@ -80,3 +81,5 @@ def test_plot_runs_returns_one_figure_per_metric(tmp_path):
         "acc50",
         "ap50",
     }
+    assert all(figure.number in plt.get_fignums() for figure in figures)
+    plt.close("all")
