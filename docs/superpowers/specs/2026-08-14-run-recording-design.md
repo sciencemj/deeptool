@@ -54,6 +54,10 @@ existing `train_` or `val_` prefix. If both phases need separate persisted
 metrics, the model names them explicitly, for example `train_iou` and
 `val_iou`.
 
+The structural row names `epoch`, `train_loss`, `val_loss`, `lr`, and `sec` are
+reserved; `log()` rejects those exact names instead of silently replacing a
+Trainer-generated value. No domain metric names are otherwise inspected.
+
 Custom epoch averages are also appended to `Trainer.history`, regardless of
 whether `log_dir` is set. Calling `log()` before a Trainer is attached remains
 a no-op, matching `plot()`.
