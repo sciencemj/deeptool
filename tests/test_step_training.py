@@ -303,3 +303,16 @@ def test_plateau_scheduler_steps_on_step_validation_boundaries(tmp_path):
 
     rows = _rows(tmp_path / "exp/history.jsonl")
     assert [row["lr"] for row in rows] == pytest.approx([0.1, 0.1, 0.01])
+
+
+def test_step_checkpoint_includes_and_returns_global_step(tmp_path):
+    trainer = Trainer(max_steps=3, device="cpu", plot=False)
+    trainer.fit(CountingModel(), TinyData(val_batches=0))
+    path = tmp_path / "checkpoint.pt"
+
+    trainer.save_checkpoint(path)
+
+    payload = torch.load(path, map_location="cpu", weights_only=False)
+    assert payload["step"] == 3
+    meta = Trainer.load_checkpoint(path, CountingModel())
+    assert meta["step"] == 3

@@ -518,7 +518,10 @@ class Trainer(HyperParameters):
         Args:
             path: Destination file.
         """
-        _save_checkpoint(self.model, self.optim, self.epoch, path)
+        step = self.global_step if self.training_unit == "step" else None
+        _save_checkpoint(
+            self.model, self.optim, self.epoch, path, step=step
+        )
 
     @staticmethod
     def load_checkpoint(path: str | Path, model: torch.nn.Module,

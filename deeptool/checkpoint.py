@@ -26,7 +26,8 @@ def atomic_save(payload: dict[str, Any], path: str | Path) -> None:
 
 
 def checkpoint_payload(model: torch.nn.Module, optim: torch.optim.Optimizer,
-                       epoch: int) -> dict[str, Any]:
+                       epoch: int, *, step: int | None = None
+                       ) -> dict[str, Any]:
     """Build a full checkpoint payload that can resume training.
 
     Args:
@@ -37,16 +38,20 @@ def checkpoint_payload(model: torch.nn.Module, optim: torch.optim.Optimizer,
     Returns:
         A dict with `model`, `optim`, `epoch` and `hparams` keys.
     """
-    return {
+    payload = {
         "model": model.state_dict(),
         "optim": optim.state_dict(),
         "epoch": epoch,
         "hparams": getattr(model, "hparams", {}),
     }
+    if step is not None:
+        payload["step"] = step
+    return payload
 
 
 def save_checkpoint(model: torch.nn.Module, optim: torch.optim.Optimizer,
-                    epoch: int, path: str | Path) -> None:
+                    epoch: int, path: str | Path, *,
+                    step: int | None = None) -> None:
     """Save model and optimizer state, epoch and hyperparameters to one file.
 
     Args:
@@ -55,7 +60,7 @@ def save_checkpoint(model: torch.nn.Module, optim: torch.optim.Optimizer,
         epoch: Epoch index to record.
         path: Destination file.
     """
-    torch.save(checkpoint_payload(model, optim, epoch), path)
+    torch.save(checkpoint_payload(model, optim, epoch, step=step), path)
 
 
 def load_checkpoint(path: str | Path, model: torch.nn.Module,
@@ -79,7 +84,11 @@ def load_checkpoint(path: str | Path, model: torch.nn.Module,
     model.load_state_dict(ckpt["model"])
     if optim is not None:
         optim.load_state_dict(ckpt["optim"])
-    return {"epoch": ckpt["epoch"], "hparams": ckpt["hparams"]}
+    metadata = {"hparams": ckpt["hparams"]}
+    for progress_name in ("epoch", "step"):
+        if progress_name in ckpt:
+            metadata[progress_name] = ckpt[progress_name]
+    return metadata
 
 
 class BestSnapshot:
@@ -148,6 +157,8 @@ class BestSnapshot:
         # 매 개선마다 쓰면 낭비이므로 기본값은 가중치 전용이다.
         if self.with_optim:
             payload = checkpoint_payload(model, optim, progress)
+            if progress_name == "step":
+                payload["step"] = payload.pop("epoch")
             if self.monitor != "val_loss" or progress_name != "epoch":
                 payload.update({
                     "monitor": self.monitor,

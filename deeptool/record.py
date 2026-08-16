@@ -98,24 +98,32 @@ def plot_runs(source: str | Path | Mapping[str, Mapping[str, list[Any]]]
         source: A run root accepted by `load_runs`, or its loaded result.
 
     Returns:
-        One Matplotlib figure per metric, excluding `epoch`.
+        One Matplotlib figure per metric, excluding `epoch` and `step`.
     """
     runs = source if isinstance(source, Mapping) else load_runs(source)
     metrics = dict.fromkeys(
         metric
         for run in runs.values()
         for metric in run
-        if metric != "epoch"
+        if metric not in {"epoch", "step"}
     )
     figures = []
     for metric in metrics:
         figure, axes = plt.subplots()
+        xlabels = set()
         for name, run in runs.items():
             if metric not in run:
                 continue
-            epochs = run.get("epoch", list(range(len(run[metric]))))
-            axes.plot(epochs, run[metric], label=name)
-        axes.set_xlabel("epoch")
+            if "epoch" in run:
+                xlabel = "epoch"
+            elif "step" in run:
+                xlabel = "step"
+            else:
+                xlabel = "index"
+            xlabels.add(xlabel)
+            x = run.get(xlabel, list(range(len(run[metric]))))
+            axes.plot(x, run[metric], label=name)
+        axes.set_xlabel(xlabels.pop() if len(xlabels) == 1 else "progress")
         axes.set_ylabel(metric)
         axes.grid(True)
         axes.legend()

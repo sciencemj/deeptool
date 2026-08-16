@@ -83,3 +83,16 @@ def test_plot_runs_returns_one_figure_per_metric(tmp_path):
     }
     assert all(figure.number in plt.get_fignums() for figure in figures)
     plt.close("all")
+
+
+def test_plot_runs_uses_step_axis_for_step_records(tmp_path):
+    recorder = RunRecorder(tmp_path / "llm")
+    recorder.epoch(step=10, train_loss=2.0)
+    recorder.epoch(step=20, train_loss=1.5)
+
+    figure = plot_runs(tmp_path)[0]
+    axes = figure.axes[0]
+
+    assert axes.get_xlabel() == "step"
+    assert list(axes.lines[0].get_xdata()) == [10, 20]
+    plt.close("all")

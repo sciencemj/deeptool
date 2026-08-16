@@ -66,6 +66,18 @@ def test_custom_snapshot_with_optimizer_keeps_resume_and_monitor_fields(tmp_path
     assert payload["score"] == 0.8
 
 
+def test_step_snapshot_with_optimizer_stores_step_progress(tmp_path):
+    model, optim = _model_and_optim()
+    path = tmp_path / "best.pt"
+    best = BestSnapshot(path=path, with_optim=True)
+
+    best.update(0.4, "step", 12, model, optim)
+    payload = torch.load(path, map_location="cpu", weights_only=False)
+
+    assert payload["step"] == 12
+    assert "epoch" not in payload
+
+
 def test_disabled_custom_snapshot_error_names_metric_score_and_progress():
     model, optim = _model_and_optim()
     best = BestSnapshot(enabled=False, monitor="iou", mode="max")
