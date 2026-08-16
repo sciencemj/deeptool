@@ -18,7 +18,7 @@ dt.Trainer(max_epochs=20, patience=3).hparams
 ```
 {'max_epochs': 20, 'device': None, 'gradient_clip_val': 0, 'plot': True,
  'snapshot_best': True, 'best_path': None, 'best_with_optim': False,
- 'patience': 3, 'log_dir': None}
+ 'patience': 3, 'log_dir': None, 'monitor': 'val_loss', 'mode': 'min'}
 ```
 
 ## Device selection
@@ -73,6 +73,8 @@ Without validation data, `val_loss` stays an empty list.
 When a model calls `self.log("iou", value)`, the epoch average of that custom
 metric enters the same dict. An epoch with no observation gets `None` to keep
 positions aligned.
+`Trainer(monitor="iou", mode="max")` also uses that metric for best snapshots
+and early stopping. The defaults are `monitor="val_loss"` and `mode="min"`.
 
 ## Persisting training runs
 

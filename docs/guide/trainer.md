@@ -17,7 +17,7 @@ dt.Trainer(max_epochs=20, patience=3).hparams
 ```
 {'max_epochs': 20, 'device': None, 'gradient_clip_val': 0, 'plot': True,
  'snapshot_best': True, 'best_path': None, 'best_with_optim': False,
- 'patience': 3, 'log_dir': None}
+ 'patience': 3, 'log_dir': None, 'monitor': 'val_loss', 'mode': 'min'}
 ```
 
 ## 디바이스 자동 선택
@@ -71,6 +71,8 @@ len(trainer.history["train_loss"]) < trainer.max_epochs   # True 면 일찍 멈�
 
 모델이 `self.log("iou", value)`를 부르면 사용자 지표도 같은 dict에 에폭
 평균으로 들어간다. 어떤 에폭에 값이 없으면 위치를 맞추기 위해 `None`이 들어간다.
+`Trainer(monitor="iou", mode="max")`로 지정하면 같은 지표가 best snapshot과
+조기 종료 기준도 된다. 기본은 `monitor="val_loss", mode="min"`이다.
 
 ## 디스크에 학습 기록 남기기
 

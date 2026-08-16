@@ -68,7 +68,7 @@ trainer.fit(LinearRegression(), SyntheticRegression())
 | Cross-cell methods | `@add_to_class` without redefining the class |
 | Live loss curves | Redrawn in place during training |
 | Device selection | `cuda` → `mps` → `cpu` |
-| Best weights, early stopping | Snapshot at the lowest validation loss, plus `patience` |
+| Best weights, early stopping | Snapshot by `val_loss` or a custom monitor, plus `patience` |
 | Post-hoc evaluation | `trainer.predict(data)` collects per-sample predictions |
 | Checkpoints | Save and restore |
 

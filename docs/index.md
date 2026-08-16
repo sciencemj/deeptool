@@ -67,7 +67,7 @@ trainer.fit(LinearRegression(), SyntheticRegression())
 | 셀 간 메서드 추가 | `@add_to_class` 로 클래스 재정의 없이 |
 | 라이브 손실 곡선 | 학습 중 셀 안에서 제자리 갱신 |
 | 디바이스 자동 선택 | `cuda` → `mps` → `cpu` |
-| 최적 가중치 · 조기 종료 | 검증 손실 최저점 스냅샷, `patience` |
+| 최적 가중치 · 조기 종료 | `val_loss` 또는 custom monitor 스냅샷, `patience` |
 | 사후 평가 | `trainer.predict(data)` 로 샘플별 예측 수집 |
 | 체크포인트 | 저장 · 복원 |
 

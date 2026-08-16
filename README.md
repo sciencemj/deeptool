@@ -139,6 +139,11 @@ trainer.best_epoch, trainer.best_val_loss    # (18, 0.2913)
 trainer.restore_best()                       # 18 을 반환
 ```
 
+IoU·accuracy처럼 클수록 좋은 지표는 검증 단계에서 `self.log("iou", value)`로
+기록하고 `Trainer(monitor="iou", mode="max")`로 지정한다. 같은 기준이 best
+snapshot, `restore_best()`, 조기 종료를 모두 제어한다. 기본은
+`monitor="val_loss", mode="min"`이다.
+
 `fit()` 은 가중치를 자동으로 되돌리지 않는다. `restore_best()` 를 부르기 전까지는
 마지막 epoch 상태이므로 두 시점의 성능을 비교할 수 있다.
 
@@ -158,6 +163,8 @@ Adam 기준 모델의 2배라 매 epoch 쓰면 낭비다. 최저점부터 학습
 | `best_path` | `None` | `None` 이면 메모리, 경로면 파일 |
 | `best_with_optim` | `False` | 파일에 optimizer 상태도 넣을 것인가 |
 | `patience` | `None` | 몇 epoch 개선이 없으면 멈출 것인가 |
+| `monitor` | `"val_loss"` | best/조기 종료에 사용할 지표 이름 |
+| `mode` | `"min"` | `min` 또는 `max` |
 
 ### 학습 후 평가
 
@@ -184,7 +191,7 @@ p.inputs[~p.correct]             # 틀린 샘플의 입력 — 시각화에 쓴�
 | `dt.HyperParameters` | `save_hyperparameters()` 로 `__init__` 인자를 속성 + `hparams` 로 저장 |
 | `dt.DataModule` | `get_dataloader(train)` 하나만 구현하면 되는 데이터 규약 |
 | `dt.Module` | `forward`/`loss`/`configure_optimizers` 를 채우는 모델 규약 |
-| `dt.Trainer` | `fit(model, data)`, `predict(data)`, `restore_best()`, `save_checkpoint`, `load_checkpoint`, `history`, `best_epoch`, `best_val_loss` |
+| `dt.Trainer` | `fit(model, data)`, `predict(data)`, `restore_best()`, `save_checkpoint`, `load_checkpoint`, `history`, `best_score`, `best_epoch`, `best_step`, `best_val_loss` |
 | `dt.predict` | 모델과 dataloader 를 받아 데이터셋 전체 예측을 모은다 |
 | `dt.Predictions` | 예측 결과. `preds`·`probs`·`confidence`·`correct`·`accuracy` |
 | `dt.ProgressBoard` | 라이브 손실 곡선. `Trainer(plot=True)` 가 자동으로 만든다 |

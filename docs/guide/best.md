@@ -36,12 +36,13 @@ trainer.predict(data).accuracy    # 최저점 기준
 `restore_best()`는 **모델 가중치만** 되돌린다. optimizer 상태는 그대로다.
 목적이 "가장 좋은 모델로 평가·추론"이지 학습 재개가 아니기 때문이다.
 
-## 인자 네 개
+## 인자 여섯 개
 
 ```python
 dt.Trainer(max_epochs, ...,
            snapshot_best=True, best_path=None,
-           best_with_optim=False, patience=None)
+           best_with_optim=False, patience=None,
+           monitor="val_loss", mode="min")
 ```
 
 | 인자 | 기본 | 의미 |
@@ -50,10 +51,42 @@ dt.Trainer(max_epochs, ...,
 | `best_path` | `None` | `None`이면 메모리, 경로면 파일 |
 | `best_with_optim` | `False` | 파일에 optimizer 상태도 넣을 것인가 |
 | `patience` | `None` | 몇 에폭 개선이 없으면 멈출 것인가 |
+| `monitor` | `"val_loss"` | 비교할 정확한 지표 이름 |
+| `mode` | `"min"` | 작을수록 좋은지(`min`), 클수록 좋은지(`max`) |
 
-`best_val_loss`와 `best_epoch`는 **`snapshot_best=False`여도 계속 추적된다.**
-float 비교라 비용이 없고, 몇 번째가 최저였는지는 그 자체로 쓸모가 있다.
-끄면 복사·쓰기만 건너뛴다.
+`best_score`와 `best_epoch`는 **`snapshot_best=False`여도 계속 추적된다.**
+`best_val_loss`는 custom monitor를 쓰더라도 실제 검증 손실 최저값을 별도로
+유지한다. 끄면 비교는 계속하고 복사·쓰기만 건너뛴다.
+
+## IoU·accuracy로 최적 모델 고르기
+
+검증 단계에서 자유형 지표를 기록하고 같은 이름을 monitor로 지정한다.
+
+```python
+class SegmentationModel(dt.Module):
+    def validation_step(self, batch):
+        y_hat = self(*batch[:-1])
+        target = batch[-1]
+        loss = self.loss(y_hat, target)
+        prediction = y_hat.argmax(dim=1)
+        intersection = ((prediction == 1) & (target == 1)).sum()
+        union = ((prediction == 1) | (target == 1)).sum().clamp_min(1)
+        self.log("iou", intersection / union)
+        return loss
+
+trainer = dt.Trainer(
+    max_epochs=100,
+    patience=5,
+    monitor="iou",
+    mode="max",
+    best_path="best.pt",
+)
+```
+
+이 설정에서는 IoU 최고점 하나가 `best.pt`, `best_score`, `best_epoch`,
+`restore_best()`, 조기 종료를 모두 결정한다. 같은 값은 개선이 아니다.
+monitor가 어떤 에폭에 빠지거나 NaN/무한대면 해당 에폭을 이름으로 표시하고 즉시
+실패한다. `ReduceLROnPlateau`만은 이 설정과 독립적으로 계속 `val_loss`를 받는다.
 
 ## 손실이 계속 줄기만 할 때
 
@@ -142,10 +175,10 @@ ValueError: patience needs validation data.
 세 번째가 특히 쓸모 있다. 껐다는 사실을 알리면서 최저점 정보는 그대로 준다.
 `max_epochs=8`로 다시 돌리면 된다.
 
-## val_loss 기준의 한계
+## 기본 val_loss 기준의 한계
 
-`best_epoch`는 **검증 손실** 최저점이다. 분류에서 이게 정확도 최고점과
-같지 않다.
+기본 설정의 `best_epoch`는 **검증 손실** 최저점이다. 분류에서 이게 정확도
+최고점과 같지 않다. 차이가 실제로 중요하면 위처럼 monitor를 바꿀 수 있다.
 
 교차엔트로피는 `-log p(정답)`이라 확신도에 연속 반응하고, 정확도는 argmax의
 0/1이다. 최저 CE 지점 이후:

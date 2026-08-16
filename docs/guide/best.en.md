@@ -36,12 +36,13 @@ trainer.predict(data).accuracy    # best epoch
 `restore_best()` restores **model weights only**. Optimizer state is untouched,
 because the point is evaluating with the best model, not resuming training.
 
-## The four arguments
+## The six arguments
 
 ```python
 dt.Trainer(max_epochs, ...,
            snapshot_best=True, best_path=None,
-           best_with_optim=False, patience=None)
+           best_with_optim=False, patience=None,
+           monitor="val_loss", mode="min")
 ```
 
 | Argument | Default | Meaning |
@@ -50,10 +51,42 @@ dt.Trainer(max_epochs, ...,
 | `best_path` | `None` | `None` keeps it in memory; a path writes a file |
 | `best_with_optim` | `False` | Also store optimizer state in that file |
 | `patience` | `None` | Stop after this many epochs without improvement |
+| `monitor` | `"val_loss"` | Exact metric name to compare |
+| `mode` | `"min"` | Whether lower (`min`) or higher (`max`) is better |
 
-`best_val_loss` and `best_epoch` are tracked **even with
-`snapshot_best=False`**. Comparing floats costs nothing, and knowing which
-epoch was best is useful on its own. Disabling only skips the copy or write.
+`best_score` and `best_epoch` are tracked **even with
+`snapshot_best=False`**. `best_val_loss` continues to hold the actual minimum
+validation loss under a custom monitor. Disabling only skips the copy or write.
+
+## Selecting by IoU or accuracy
+
+Log a free-form validation metric and use that exact name as the monitor.
+
+```python
+class SegmentationModel(dt.Module):
+    def validation_step(self, batch):
+        y_hat = self(*batch[:-1])
+        target = batch[-1]
+        loss = self.loss(y_hat, target)
+        prediction = y_hat.argmax(dim=1)
+        intersection = ((prediction == 1) & (target == 1)).sum()
+        union = ((prediction == 1) | (target == 1)).sum().clamp_min(1)
+        self.log("iou", intersection / union)
+        return loss
+
+trainer = dt.Trainer(
+    max_epochs=100,
+    patience=5,
+    monitor="iou",
+    mode="max",
+    best_path="best.pt",
+)
+```
+
+The same peak IoU now controls `best.pt`, `best_score`, `best_epoch`,
+`restore_best()`, and early stopping. Ties are not improvements. A missing,
+NaN, or infinite monitor fails at the named epoch. `ReduceLROnPlateau` remains
+independent and continues to receive `val_loss`.
 
 ## When the loss just keeps falling
 
@@ -145,10 +178,11 @@ ValueError: patience needs validation data.
 The third one earns its keep: it tells you snapshotting was off while still
 handing over the best-epoch information. Rerun with `max_epochs=8`.
 
-## The limits of selecting on val_loss
+## The limits of the default val_loss monitor
 
-`best_epoch` is the minimum of **validation loss**. For classification that is
-not the same as peak accuracy.
+Under the default, `best_epoch` is the minimum of **validation loss**. For
+classification that is not the same as peak accuracy. When that difference
+matters, use a custom monitor as shown above.
 
 Cross-entropy is `-log p(correct)`, a continuous response to confidence.
 Accuracy is a 0/1 argmax. After the cross-entropy minimum:
