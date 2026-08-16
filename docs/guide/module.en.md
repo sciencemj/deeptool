@@ -141,12 +141,14 @@ def validation_step(self, batch):
     return loss
 ```
 
-Scalars sent to `log` are averaged into `trainer.history['acc']` once per epoch.
-When a board exists, the current train/eval state also selects a live curve. A
+Scalars sent to `log` are averaged over the current record interval into
+`trainer.history['acc']`. That is an epoch average in epoch mode and the span
+between record or validation boundaries in step mode. When a board exists, the
+current train/eval state also selects a live curve. A
 Trainer with `log_dir` writes the exact key `acc` to `history.jsonl` as well.
 
 Using the same key in both training and validation combines all observations
-into one epoch average. Name them `train_acc` and `val_acc` yourself when they
+into one interval average. Name them `train_acc` and `val_acc` yourself when they
 must stay separate. deeptool does not interpret domain metric names.
 
 The return value must still be the loss — `Trainer` uses it to fill `history`
@@ -154,8 +156,11 @@ and to decide the best epoch.
 
 !!! note "`plot` does not reach `history`"
     Use `plot(key, value, train)` when a curve is enough and `log(key, value)`
-    when the number must be retained. `epoch`, `train_loss`, `val_loss`, `lr`,
+    when the number must be retained. `epoch`, `step`, `train_loss`, `val_loss`, `lr`,
     and `sec` are reserved for Trainer-generated fields.
+
+The live board follows the Trainer's unit: fractional epochs in epoch mode and
+optimizer steps in step mode.
 
 ## Next
 

@@ -138,11 +138,12 @@ def validation_step(self, batch):
     return loss
 ```
 
-`log`로 찍은 스칼라는 에폭 평균으로 `trainer.history['acc']`에 남고, 보드가
-있으면 현재 train/eval 상태를 보고 곡선도 함께 그린다. `log_dir`을 준
+`log`로 찍은 스칼라는 현재 기록 구간의 평균으로 `trainer.history['acc']`에
+남고, 보드가 있으면 현재 train/eval 상태를 보고 곡선도 함께 그린다. epoch
+모드에서는 에폭 평균이고 step 모드에서는 기록/검증 경계 사이 평균이다. `log_dir`을 준
 Trainer라면 `history.jsonl`에도 이름 그대로 `acc` 열이 생긴다.
 
-같은 키를 학습과 검증 양쪽에서 쓰면 한 에폭 평균으로 합쳐진다. 따로 보관하려면
+같은 키를 학습과 검증 양쪽에서 쓰면 한 기록 구간 평균으로 합쳐진다. 따로 보관하려면
 `train_acc`, `val_acc`처럼 모델이 직접 이름을 나눈다. deeptool은 지표 이름의
 뜻을 검사하지 않는다.
 
@@ -151,8 +152,11 @@ Trainer라면 `history.jsonl`에도 이름 그대로 `acc` 열이 생긴다.
 
 !!! note "`plot`은 `history`에 남지 않는다"
     그림만 필요하면 기존 `plot(key, value, train)`을 쓴다. 숫자도 보관하려면
-    `log(key, value)`를 쓴다. `epoch`, `train_loss`, `val_loss`, `lr`, `sec`는
+    `log(key, value)`를 쓴다. `epoch`, `step`, `train_loss`, `val_loss`, `lr`, `sec`는
     Trainer가 기록하는 예약 이름이다.
+
+라이브 보드의 x축은 Trainer의 학습 단위를 따른다. epoch 모드는 기존처럼 학습
+배치를 fractional epoch으로, step 모드는 optimizer step으로 표시한다.
 
 ## 다음
 

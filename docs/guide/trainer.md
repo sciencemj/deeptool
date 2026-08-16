@@ -17,7 +17,9 @@ dt.Trainer(max_epochs=20, patience=3).hparams
 ```
 {'max_epochs': 20, 'device': None, 'gradient_clip_val': 0, 'plot': True,
  'snapshot_best': True, 'best_path': None, 'best_with_optim': False,
- 'patience': 3, 'log_dir': None, 'monitor': 'val_loss', 'mode': 'min'}
+ 'patience': 3, 'log_dir': None, 'monitor': 'val_loss', 'mode': 'min',
+ 'max_steps': None, 'log_every_n_steps': 1, 'val_every_n_steps': None,
+ 'scheduler_interval': 'auto'}
 ```
 
 ## 디바이스 자동 선택
@@ -74,6 +76,34 @@ len(trainer.history["train_loss"]) < trainer.max_epochs   # True 면 일찍 멈�
 `Trainer(monitor="iou", mode="max")`로 지정하면 같은 지표가 best snapshot과
 조기 종료 기준도 된다. 기본은 `monitor="val_loss", mode="min"`이다.
 
+## step 기준 학습
+
+LLM처럼 epoch보다 optimizer update 수가 더 자연스러운 경우 `max_steps`를 쓴다.
+`max_epochs`와 `max_steps` 중 정확히 하나만 지정한다.
+
+```python
+trainer = dt.Trainer(
+    max_steps=10_000,
+    log_every_n_steps=50,
+    val_every_n_steps=500,
+    scheduler_interval="step",
+    patience=4,
+    monitor="val_loss",
+    log_dir="runs/llm-1",
+)
+trainer.fit(model, data)
+```
+
+step은 완료된 `optimizer.step()` 하나이며 1부터 기록된다. 유한하고 비어 있지
+않은 train DataLoader가 필요하고, 끝까지 가면 다음 pass를 자동으로 시작한다.
+`log_every_n_steps`마다 기록하며 `val_every_n_steps`마다 검증한다. 검증 간격을
+생략하면 마지막 step에서만 검증한다. 조기 종료의 `patience`는 optimizer update
+수가 아니라 monitor가 실제로 확인된 검증 횟수를 센다.
+
+step history에는 좌표를 보존하는 `step` 배열이 추가된다. 검증하지 않은 행의
+`val_loss`는 `None`이다. 최적 지점은 `best_step`으로 읽고, epoch 모드에서는
+기존대로 `best_epoch`를 쓴다.
+
 ## 디스크에 학습 기록 남기기
 
 ```python
@@ -81,7 +111,7 @@ trainer = dt.Trainer(max_epochs=50, plot=False, log_dir="runs/exp1")
 trainer.fit(model, data)
 ```
 
-완료된 에폭마다 JSONL 한 줄을 append하고 즉시 flush한다.
+완료된 에폭 또는 설정한 step 경계마다 JSONL 한 줄을 append하고 즉시 flush한다.
 
 ```
 runs/exp1/
@@ -96,8 +126,9 @@ runs/exp1/
 {"epoch": 0, "train_loss": 2.4724, "val_loss": 2.3155, "iou": 0.3248, "lr": 0.001, "sec": 116.2}
 ```
 
-프로세스가 다음 에폭 중에 죽어도 이미 끝난 줄은 남는다. 일반 스크립트에서는
-`log_dir`을 준 경우에만 같은 필드가 에폭당 한 줄로 stdout에도 나온다.
+step 모드의 행은 `epoch` 대신 `step`을 쓴다. 프로세스가 다음 구간 중에 죽어도
+이미 끝난 줄은 남는다. 일반 스크립트에서는 `log_dir`을 준 경우에만 같은 필드가
+기록 경계마다 한 줄로 stdout에도 나온다.
 노트북에서는 라이브 보드만 쓰고 이 문장은 출력하지 않는다. `log_dir=None`이면
 기존처럼 파일과 에폭 출력이 모두 없다.
 
@@ -110,7 +141,8 @@ figures = dt.plot_runs(runs)
 
 `load_runs`는 `{"실행명": {"지표명": [값, ...]}}`를 반환한다. 어떤 모델에만
 있는 지표도 그대로 읽으며, 에폭 중간에 없는 값은 `None`으로 정렬한다.
-`plot_runs`는 `epoch`을 제외한 지표마다 열린 Matplotlib Figure 하나를 반환한다.
+`plot_runs`는 `epoch`과 `step`을 제외한 지표마다 열린 Matplotlib Figure 하나를
+반환하고, 실행에 맞는 진행 축을 쓴다.
 
 ## 학습률 스케줄러
 
@@ -126,13 +158,14 @@ def configure_optimizers(self):
     return optim, scheduler
 ```
 
-일반 scheduler의 `step()`은 에폭 학습·검증·기록이 끝난 뒤 한 번 호출된다.
-따라서 JSONL의 `lr`은 그 행의 에폭에서 실제로 사용한 값이고, 바뀐 값은 다음
-에폭부터 보인다.
+`scheduler_interval="auto"`는 학습 단위를 따른다. epoch 모드에서는 에폭이
+끝날 때, step 모드에서는 각 optimizer update 뒤 일반 scheduler의 `step()`을
+호출한다. `"epoch"` 또는 `"step"`으로 명시할 수도 있다. JSONL의 `lr`은 해당
+행의 마지막 update에서 실제로 사용한 값이고, 바뀐 값은 다음 update부터 보인다.
 
-`ReduceLROnPlateau`만 `scheduler.step(val_loss)`로 호출한다. 판단할 검증
-손실이 필요하므로 검증 dataloader가 없으면 학습 시작 전에 `ValueError`가 난다.
-매 배치마다 step해야 하는 `OneCycleLR` 같은 scheduler와 AMP는 아직 지원하지
+`ReduceLROnPlateau`는 일반 간격을 무시하고 검증이 실행될 때마다
+`scheduler.step(val_loss)`로 호출한다. 판단할 검증 손실이 필요하므로 검증
+dataloader가 없으면 학습 시작 전에 `ValueError`가 난다. AMP는 아직 지원하지
 않는다.
 
 ## LazyLinear 자동 실체화
@@ -177,7 +210,9 @@ dt.Trainer(max_epochs=20, gradient_clip_val=1.0)
 trainer.save_checkpoint("ckpt.pt")
 ```
 
-파일에 `model`, `optim`, `epoch`, `hparams` 넷이 들어간다.
+파일에 `model`, `optim`, `epoch`, `hparams`가 들어간다. step 모드에서는 현재
+`step`도 함께 저장되고 `load_checkpoint()`의 metadata에도 돌아온다. 자동으로
+그 step부터 학습을 재개하지는 않는다.
 
 복원은 정적 메서드라 trainer 없이도 부를 수 있다.
 

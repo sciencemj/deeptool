@@ -50,13 +50,17 @@ dt.Trainer(max_epochs, ...,
 | `snapshot_best` | `True` | 스냅샷을 만들 것인가 |
 | `best_path` | `None` | `None`이면 메모리, 경로면 파일 |
 | `best_with_optim` | `False` | 파일에 optimizer 상태도 넣을 것인가 |
-| `patience` | `None` | 몇 에폭 개선이 없으면 멈출 것인가 |
+| `patience` | `None` | 몇 번의 monitor 확인 동안 개선이 없으면 멈출 것인가 |
 | `monitor` | `"val_loss"` | 비교할 정확한 지표 이름 |
 | `mode` | `"min"` | 작을수록 좋은지(`min`), 클수록 좋은지(`max`) |
 
 `best_score`와 `best_epoch`는 **`snapshot_best=False`여도 계속 추적된다.**
 `best_val_loss`는 custom monitor를 쓰더라도 실제 검증 손실 최저값을 별도로
 유지한다. 끄면 비교는 계속하고 복사·쓰기만 건너뛴다.
+
+step 모드에서는 같은 기준을 검증 경계마다 확인하고 최적 위치를 `best_step`에
+저장한다. `best_epoch`는 `None`이며 `restore_best()`는 복원한 step을 반환한다.
+이때 `patience`는 optimizer update가 아니라 monitor 확인 횟수를 센다.
 
 ## IoU·accuracy로 최적 모델 고르기
 
@@ -83,7 +87,8 @@ trainer = dt.Trainer(
 )
 ```
 
-이 설정에서는 IoU 최고점 하나가 `best.pt`, `best_score`, `best_epoch`,
+이 설정에서는 IoU 최고점 하나가 `best.pt`, `best_score`, `best_epoch`(또는
+`best_step`),
 `restore_best()`, 조기 종료를 모두 결정한다. 같은 값은 개선이 아니다.
 monitor가 어떤 에폭에 빠지거나 NaN/무한대면 해당 에폭을 이름으로 표시하고 즉시
 실패한다. `ReduceLROnPlateau`만은 이 설정과 독립적으로 계속 `val_loss`를 받는다.

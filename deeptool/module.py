@@ -42,24 +42,24 @@ class Module(nn.Module, HyperParameters):
             | torch.optim.lr_scheduler.ReduceLROnPlateau,
         ]
     ):
-        """Build an optimizer and, optionally, an epoch-stepped scheduler.
+        """Build an optimizer and, optionally, a learning-rate scheduler.
 
         Returns:
-            An optimizer, or `(optimizer, scheduler)`. The Trainer steps normal
-            schedulers after every epoch and gives validation loss to
-            `ReduceLROnPlateau`. Batch-stepped schedulers are not supported.
+            An optimizer, or `(optimizer, scheduler)`. Normal scheduler timing
+            follows `Trainer.scheduler_interval`; `ReduceLROnPlateau` receives
+            validation loss whenever validation runs.
         """
         raise NotImplementedError
 
     def log(self, key: str, value: torch.Tensor | float) -> None:
-        """Aggregate one custom scalar under its unchanged name for this epoch.
+        """Aggregate one custom scalar under its unchanged name for this interval.
 
         When a live board is attached, the same value is also plotted using the
         model's current training or validation phase. Calling this method before
         a Trainer is attached is a no-op.
 
         Args:
-            key: Free-form metric name stored in epoch history.
+            key: Free-form metric name stored in progress history.
             value: A scalar tensor or plain number.
 
         Raises:
@@ -82,8 +82,7 @@ class Module(nn.Module, HyperParameters):
             key: Curve name. Rendered as `train_<key>` or `val_<key>`.
             value: A scalar tensor or plain float.
             train: Selects the training or validation curve. Training points use
-                a fractional epoch on the x-axis; validation points use the
-                epoch number.
+                the active Trainer progress unit on the x-axis.
         """
         if self.board is None or self.trainer is None:
             return

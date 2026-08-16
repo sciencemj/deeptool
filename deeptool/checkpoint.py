@@ -34,9 +34,10 @@ def checkpoint_payload(model: torch.nn.Module, optim: torch.optim.Optimizer,
         model: Model whose `state_dict` is stored.
         optim: Optimizer whose `state_dict` is stored.
         epoch: Epoch index to record.
+        step: Optional completed optimizer-step count.
 
     Returns:
-        A dict with `model`, `optim`, `epoch` and `hparams` keys.
+        A dict with `model`, `optim`, `epoch`, `hparams`, and optional `step`.
     """
     payload = {
         "model": model.state_dict(),
@@ -59,6 +60,7 @@ def save_checkpoint(model: torch.nn.Module, optim: torch.optim.Optimizer,
         optim: Optimizer to save.
         epoch: Epoch index to record.
         path: Destination file.
+        step: Optional completed optimizer-step count.
     """
     torch.save(checkpoint_payload(model, optim, epoch, step=step), path)
 
@@ -78,7 +80,7 @@ def load_checkpoint(path: str | Path, model: torch.nn.Module,
             to restore weights only, for inference.
 
     Returns:
-        A dict with the stored `epoch` and `hparams`.
+        Stored progress (`epoch` and/or `step`) plus `hparams`.
     """
     ckpt = torch.load(path, map_location="cpu", weights_only=False)
     model.load_state_dict(ckpt["model"])

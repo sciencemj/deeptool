@@ -110,9 +110,29 @@ figures = dt.plot_runs(runs)
 `plot_runs`는 지표마다 Figure 하나를 만들고 그 지표가 있는 실행만 겹쳐 그린다.
 모델마다 지표 이름이 달라도 별도 스키마가 필요 없다.
 
+LLM처럼 에폭보다 optimizer update 횟수가 중요한 경우에는 `max_steps`를 쓴다.
+`max_epochs`와 `max_steps` 중 정확히 하나만 지정해야 한다.
+
+```python
+trainer = dt.Trainer(
+    max_steps=10_000,
+    log_every_n_steps=50,
+    val_every_n_steps=500,
+    scheduler_interval="step",
+    patience=4,
+    monitor="val_loss",
+    log_dir="runs/llm-1",
+)
+```
+
+step 모드의 기록은 `epoch` 대신 1부터 시작하는 `step`을 쓴다. 유한하고 비어
+있지 않은 train DataLoader를 끝까지 돌면 자동으로 다시 순회한다. 검증은
+`val_every_n_steps` 간격과 마지막 step에 실행하며, 생략하면 마지막에만 실행한다.
+`best_step`과 `restore_best()`도 같은 optimizer step을 가리킨다.
+
 ### 학습률 스케줄러
 
-에폭 기반 scheduler는 optimizer와 함께 반환한다.
+scheduler는 optimizer와 함께 반환한다.
 
 ```python
 def configure_optimizers(self):
@@ -121,9 +141,10 @@ def configure_optimizers(self):
     return optim, scheduler
 ```
 
-일반 scheduler는 에폭 뒤 `step()`, `ReduceLROnPlateau`는 검증 뒤
-`step(val_loss)`로 호출된다. 매 배치 호출이 필요한 `OneCycleLR`와 AMP는 아직
-지원하지 않는다.
+`scheduler_interval="auto"`는 에폭 학습에서 에폭마다, step 학습에서 optimizer
+update마다 일반 scheduler의 `step()`을 부른다. 필요하면 `"epoch"` 또는
+`"step"`으로 고정할 수 있다. `ReduceLROnPlateau`는 이 간격과 무관하게 검증 뒤
+`step(val_loss)`로 호출된다. AMP는 아직 지원하지 않는다.
 
 ### 조기 종료와 최적 가중치
 
@@ -162,7 +183,7 @@ Adam 기준 모델의 2배라 매 epoch 쓰면 낭비다. 최저점부터 학습
 | `snapshot_best` | `True` | 스냅샷을 만들 것인가 |
 | `best_path` | `None` | `None` 이면 메모리, 경로면 파일 |
 | `best_with_optim` | `False` | 파일에 optimizer 상태도 넣을 것인가 |
-| `patience` | `None` | 몇 epoch 개선이 없으면 멈출 것인가 |
+| `patience` | `None` | 몇 번의 monitor 확인 동안 개선이 없으면 멈출 것인가 |
 | `monitor` | `"val_loss"` | best/조기 종료에 사용할 지표 이름 |
 | `mode` | `"min"` | `min` 또는 `max` |
 

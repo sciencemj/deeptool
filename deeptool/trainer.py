@@ -43,7 +43,7 @@ class Trainer(HyperParameters):
     `trainer.hparams` records it in full.
 
     Args:
-        max_epochs: Upper bound on epochs. Early stopping may end sooner.
+        max_epochs: Upper bound on epochs. Supply this or `max_steps`.
         device: Where to train. Defaults to `default_device()`.
         gradient_clip_val: Clips gradient norm after backward when above zero.
         plot: Draws a live loss curve in the notebook.
@@ -51,17 +51,26 @@ class Trainer(HyperParameters):
         best_path: Writes that snapshot to this file instead of memory.
         best_with_optim: Also stores optimizer state in the snapshot file, so it
             can resume training.
-        patience: Stops after this many epochs without improvement. Requires
-            validation data.
-        log_dir: Writes run metadata and one flushed JSONL row per epoch here.
+        patience: Stops after this many monitor checks without improvement.
+        log_dir: Writes run metadata and flushed JSONL progress rows here.
         monitor: Exact scalar key used for best snapshots and early stopping.
         mode: Whether lower (`min`) or higher (`max`) monitor values improve.
+        max_steps: Upper bound on completed optimizer updates. Supply this or
+            `max_epochs`.
+        log_every_n_steps: Step interval between training records.
+        val_every_n_steps: Optional step interval between validation runs.
+            Without it, step mode validates only at the final step.
+        scheduler_interval: Normal scheduler cadence. `auto` follows the active
+            training unit. `ReduceLROnPlateau` always follows validation.
 
     Raises:
-        ValueError: If `patience` is below 1.
+        ValueError: If training limits, intervals, monitor, mode, or patience
+            are invalid.
     """
 
-    _ROW_FIELDS = frozenset({"epoch", "train_loss", "val_loss", "lr", "sec"})
+    _ROW_FIELDS = frozenset({
+        "epoch", "step", "train_loss", "val_loss", "lr", "sec"
+    })
 
     def __init__(self, max_epochs: int | None = None,
                  device: torch.device | str | None = None,
@@ -132,7 +141,7 @@ class Trainer(HyperParameters):
 
     @property
     def best_val_loss(self) -> float | None:
-        """Lowest validation loss seen, or `None` before the first epoch."""
+        """Lowest validation loss seen, or `None` before the first check."""
         return self._best_val_loss
 
     @property
@@ -381,7 +390,7 @@ class Trainer(HyperParameters):
 
     def _log_scalar(self, key: str, value: float) -> None:
         if key in self._ROW_FIELDS:
-            raise ValueError(f"{key!r} is reserved for Trainer epoch rows")
+            raise ValueError(f"{key!r} is reserved for Trainer progress rows")
         self._epoch_scalars.setdefault(key, []).append(value)
 
     def _finish_logged_scalars(
@@ -513,7 +522,7 @@ class Trainer(HyperParameters):
         return self._best.restore(self.model)
 
     def save_checkpoint(self, path: str | Path) -> None:
-        """Save model and optimizer state, epoch and hyperparameters to a file.
+        """Save model, optimizer, progress, and hyperparameters to a file.
 
         Args:
             path: Destination file.
@@ -535,7 +544,7 @@ class Trainer(HyperParameters):
                 out to restore weights only, for inference.
 
         Returns:
-            A dict with the stored `epoch` and `hparams`.
+            Stored progress (`epoch` and optional `step`) plus `hparams`.
         """
         return _load_checkpoint(path, model, optim)
 

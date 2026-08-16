@@ -18,7 +18,9 @@ dt.Trainer(max_epochs=20, patience=3).hparams
 ```
 {'max_epochs': 20, 'device': None, 'gradient_clip_val': 0, 'plot': True,
  'snapshot_best': True, 'best_path': None, 'best_with_optim': False,
- 'patience': 3, 'log_dir': None, 'monitor': 'val_loss', 'mode': 'min'}
+ 'patience': 3, 'log_dir': None, 'monitor': 'val_loss', 'mode': 'min',
+ 'max_steps': None, 'log_every_n_steps': 1, 'val_every_n_steps': None,
+ 'scheduler_interval': 'auto'}
 ```
 
 ## Device selection
@@ -76,6 +78,35 @@ positions aligned.
 `Trainer(monitor="iou", mode="max")` also uses that metric for best snapshots
 and early stopping. The defaults are `monitor="val_loss"` and `mode="min"`.
 
+## Step-based training
+
+For workloads such as LLM training, bound the run by optimizer updates with
+`max_steps`. Supply exactly one of `max_epochs` and `max_steps`.
+
+```python
+trainer = dt.Trainer(
+    max_steps=10_000,
+    log_every_n_steps=50,
+    val_every_n_steps=500,
+    scheduler_interval="step",
+    patience=4,
+    monitor="val_loss",
+    log_dir="runs/llm-1",
+)
+trainer.fit(model, data)
+```
+
+A step is one completed `optimizer.step()` and is recorded from 1. The train
+DataLoader must be finite and non-empty; it is restarted after each completed
+pass. Records are emitted every `log_every_n_steps`, and validation runs every
+`val_every_n_steps`. If the validation interval is omitted, validation runs
+only at the final step. Patience counts actual monitor checks, not optimizer
+updates.
+
+Step history includes a `step` list and aligns `val_loss` with `None` on rows
+without validation. Read the best point through `best_step`; epoch runs retain
+`best_epoch`.
+
 ## Persisting training runs
 
 ```python
@@ -83,7 +114,8 @@ trainer = dt.Trainer(max_epochs=50, plot=False, log_dir="runs/exp1")
 trainer.fit(model, data)
 ```
 
-Every completed epoch appends and immediately flushes one JSONL line.
+Every completed epoch or configured step boundary appends and immediately
+flushes one JSONL line.
 
 ```
 runs/exp1/
@@ -98,8 +130,9 @@ and model hyperparameters. Each `history.jsonl` row has a free-form schema:
 {"epoch": 0, "train_loss": 2.4724, "val_loss": 2.3155, "iou": 0.3248, "lr": 0.001, "sec": 116.2}
 ```
 
-If the process dies during the next epoch, all completed lines remain. A plain
-script also prints these fields once per epoch, but only when `log_dir` is set.
+Step rows use `step` instead of `epoch`. If the process dies during the next
+interval, all completed lines remain. A plain script also prints these fields
+at each record boundary, but only when `log_dir` is set.
 Notebooks retain the live board without those lines. With `log_dir=None`, both
 files and epoch output remain disabled.
 
@@ -112,8 +145,9 @@ figures = dt.plot_runs(runs)
 
 `load_runs` returns `{run_name: {metric_name: [values, ...]}}`. Metrics present
 in only some models need no shared schema; a value absent from an intermediate
-epoch is aligned with `None`. `plot_runs` returns one open Matplotlib Figure for
-every metric except `epoch`.
+progress point is aligned with `None`. `plot_runs` returns one open Matplotlib
+Figure for every metric except `epoch` and `step`, using the run's progress
+axis.
 
 ## Learning-rate schedulers
 
@@ -129,14 +163,16 @@ def configure_optimizers(self):
     return optim, scheduler
 ```
 
-A normal scheduler receives one `step()` after training, validation, and run
-recording for the epoch. The row's `lr` is therefore the value actually used in
-that epoch; a changed value first appears in the next row.
+With `scheduler_interval="auto"`, a normal scheduler follows the training unit:
+once after each epoch in epoch mode, or after every optimizer update in step
+mode. Set `"epoch"` or `"step"` explicitly to override that choice. A row's
+`lr` is the value used by its final update; a changed value appears on the next
+update.
 
-`ReduceLROnPlateau` instead receives `scheduler.step(val_loss)`. Because it
-needs that measurement, using it without a validation dataloader raises
-`ValueError` before training. Batch-stepped schedulers such as `OneCycleLR` and
-AMP are not supported yet.
+`ReduceLROnPlateau` ignores the normal interval and receives
+`scheduler.step(val_loss)` whenever validation runs. Because it needs that
+measurement, using it without a validation dataloader raises `ValueError`
+before training. AMP is not supported yet.
 
 ## Automatic lazy materialization
 
@@ -180,7 +216,9 @@ the default, does nothing.
 trainer.save_checkpoint("ckpt.pt")
 ```
 
-The file holds four things: `model`, `optim`, `epoch`, `hparams`.
+The file holds `model`, `optim`, `epoch`, and `hparams`. Step runs also include
+the current `step`, which `load_checkpoint()` returns in its metadata. Loading
+does not automatically continue from that step.
 
 Restoring is a static method, so no trainer is needed.
 

@@ -152,6 +152,13 @@ def test_step_trainer_uses_steps_for_board_and_plot_coordinates():
     assert trainer.plot_x(train=False) == 2.0
 
 
+def test_step_is_reserved_for_trainer_rows():
+    trainer = Trainer(max_steps=1, plot=False)
+
+    with pytest.raises(ValueError, match="reserved"):
+        trainer._log_scalar("step", 1.0)
+
+
 def test_step_mode_performs_exactly_max_steps_updates():
     model = CountingModel()
     trainer = Trainer(max_steps=5, device="cpu", plot=False)

@@ -50,13 +50,18 @@ dt.Trainer(max_epochs, ...,
 | `snapshot_best` | `True` | Whether to snapshot at all |
 | `best_path` | `None` | `None` keeps it in memory; a path writes a file |
 | `best_with_optim` | `False` | Also store optimizer state in that file |
-| `patience` | `None` | Stop after this many epochs without improvement |
+| `patience` | `None` | Stop after this many monitor checks without improvement |
 | `monitor` | `"val_loss"` | Exact metric name to compare |
 | `mode` | `"min"` | Whether lower (`min`) or higher (`max`) is better |
 
 `best_score` and `best_epoch` are tracked **even with
 `snapshot_best=False`**. `best_val_loss` continues to hold the actual minimum
 validation loss under a custom monitor. Disabling only skips the copy or write.
+
+In step mode the same criterion is checked at validation boundaries and the
+best position is exposed as `best_step`. `best_epoch` is `None`, and
+`restore_best()` returns the restored step. Patience counts monitor checks,
+not optimizer updates.
 
 ## Selecting by IoU or accuracy
 
@@ -83,7 +88,8 @@ trainer = dt.Trainer(
 )
 ```
 
-The same peak IoU now controls `best.pt`, `best_score`, `best_epoch`,
+The same peak IoU now controls `best.pt`, `best_score`, `best_epoch` (or
+`best_step`),
 `restore_best()`, and early stopping. Ties are not improvements. A missing,
 NaN, or infinite monitor fails at the named epoch. `ReduceLROnPlateau` remains
 independent and continues to receive `val_loss`.
