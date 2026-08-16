@@ -63,7 +63,7 @@ class Trainer(HyperParameters):
 
     _ROW_FIELDS = frozenset({"epoch", "train_loss", "val_loss", "lr", "sec"})
 
-    def __init__(self, max_epochs: int,
+    def __init__(self, max_epochs: int | None = None,
                  device: torch.device | str | None = None,
                  gradient_clip_val: float = 0, plot: bool = True,
                  snapshot_best: bool = True,
@@ -72,8 +72,27 @@ class Trainer(HyperParameters):
                  patience: int | None = None,
                  log_dir: str | Path | None = None,
                  monitor: str = "val_loss",
-                 mode: Literal["min", "max"] = "min") -> None:
+                 mode: Literal["min", "max"] = "min",
+                 max_steps: int | None = None,
+                 log_every_n_steps: int = 1,
+                 val_every_n_steps: int | None = None,
+                 scheduler_interval: Literal[
+                     "auto", "epoch", "step"
+                 ] = "auto") -> None:
         self.save_hyperparameters()
+        if (max_epochs is None) == (max_steps is None):
+            raise ValueError("exactly one of max_epochs and max_steps is required")
+        if max_epochs is not None:
+            _require_positive_int("max_epochs", max_epochs)
+        if max_steps is not None:
+            _require_positive_int("max_steps", max_steps)
+        _require_positive_int("log_every_n_steps", log_every_n_steps)
+        if val_every_n_steps is not None:
+            _require_positive_int("val_every_n_steps", val_every_n_steps)
+        if scheduler_interval not in {"auto", "epoch", "step"}:
+            raise ValueError(
+                "scheduler_interval must be 'auto', 'epoch', or 'step'"
+            )
         # patience=0 이면 최저점 epoch 에서도 epoch - best_epoch >= 0 이 참이 되어
         # 첫 epoch 직후 멈춘다. 의미가 없으므로 막는다.
         if patience is not None and patience < 1:
@@ -89,6 +108,8 @@ class Trainer(HyperParameters):
         )
         self.recorder = RunRecorder(log_dir) if log_dir is not None else None
         self.history = {"train_loss": [], "val_loss": []}
+        self.training_unit = "epoch" if max_epochs is not None else "step"
+        self.global_step = 0
         self.epoch = 0
         self.train_batch_idx = 0
         self.val_batch_idx = 0
@@ -383,3 +404,8 @@ def _format_scalar(value: object) -> str:
     if isinstance(value, float):
         return f"{value:.6g}"
     return str(value)
+
+
+def _require_positive_int(name: str, value: object) -> None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError(f"{name} must be a positive integer")
