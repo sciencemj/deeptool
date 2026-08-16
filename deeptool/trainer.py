@@ -102,12 +102,16 @@ class Trainer(HyperParameters):
         if mode not in {"min", "max"}:
             raise ValueError("mode must be 'min' or 'max'")
         self.device = torch.device(device) if device is not None else default_device()
+        self.training_unit = "epoch" if max_epochs is not None else "step"
         self.board = (
-            ProgressBoard(xlabel="epoch", ylabel="loss", display=_in_notebook())
+            ProgressBoard(
+                xlabel=self.training_unit,
+                ylabel="loss",
+                display=_in_notebook(),
+            )
             if plot else None
         )
         self.recorder = RunRecorder(log_dir) if log_dir is not None else None
-        self.training_unit = "epoch" if max_epochs is not None else "step"
         self.history = (
             {"train_loss": [], "val_loss": []}
             if self.training_unit == "epoch"
@@ -175,6 +179,14 @@ class Trainer(HyperParameters):
     def prepare_batch(self, batch: Sequence[torch.Tensor]) -> list[torch.Tensor]:
         return [a.to(self.device) for a in batch]
 
+    def plot_x(self, train: bool) -> float:
+        """Return the live-plot coordinate for the active training unit."""
+        if self.training_unit == "step":
+            return float(self.global_step + 1 if train else self.global_step)
+        if train:
+            return self.train_batch_idx / self.num_train_batches
+        return float(self.epoch + 1)
+
     def materialize_lazy_parameters(self) -> None:
         """Materialize lazy layers with a dummy forward pass.
 
@@ -231,6 +243,8 @@ class Trainer(HyperParameters):
                 batch = next(train_iterator)
             except StopIteration:
                 self.epoch += 1
+                if self._resolved_scheduler_interval() == "epoch":
+                    self._step_normal_scheduler()
                 train_iterator = iter(self.train_dataloader)
                 batch = next(train_iterator)
             loss, last_lr = self._train_batch(batch)
@@ -264,6 +278,8 @@ class Trainer(HyperParameters):
             )
             self._append_step_history(row)
             self._record_row(row)
+            if validate:
+                self._step_plateau_scheduler(row)
             if validate and self._should_stop_early(improved):
                 return
             losses = []
@@ -289,8 +305,24 @@ class Trainer(HyperParameters):
             self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau
         ):
             self.scheduler.step(self.history["val_loss"][-1])
-        elif self.scheduler is not None:
+        elif self._resolved_scheduler_interval() == "epoch":
+            self._step_normal_scheduler()
+
+    def _resolved_scheduler_interval(self) -> Literal["epoch", "step"]:
+        if self.scheduler_interval == "auto":
+            return self.training_unit
+        return self.scheduler_interval
+
+    def _step_normal_scheduler(self) -> None:
+        plateau = torch.optim.lr_scheduler.ReduceLROnPlateau
+        if self.scheduler is not None and not isinstance(self.scheduler, plateau):
             self.scheduler.step()
+
+    def _step_plateau_scheduler(self, row: dict[str, object]) -> None:
+        if isinstance(
+            self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau
+        ):
+            self.scheduler.step(float(row["val_loss"]))
 
     def _record_meta(self) -> None:
         if self.recorder is None:
@@ -444,6 +476,8 @@ class Trainer(HyperParameters):
         self.optim.step()
         self.train_batch_idx += 1
         self.global_step += 1
+        if self._resolved_scheduler_interval() == "step":
+            self._step_normal_scheduler()
         return float(loss.detach().cpu().item()), lr
 
     def clip_gradients(self, grad_clip_val: float) -> None:

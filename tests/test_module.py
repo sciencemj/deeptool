@@ -14,10 +14,19 @@ class FakeTrainer:
         self.num_train_batches = 8
         self.num_val_batches = 2
         self.epoch = 0
+        self.global_step = 0
+        self.training_unit = "epoch"
         self.logged = []
 
     def _log_scalar(self, key, value):
         self.logged.append((key, value))
+
+    def plot_x(self, train):
+        if self.training_unit == "step":
+            return float(self.global_step + 1 if train else self.global_step)
+        if train:
+            return self.train_batch_idx / self.num_train_batches
+        return float(self.epoch + 1)
 
 
 class ToyNet(Module):
@@ -104,6 +113,18 @@ def test_plot_uses_epoch_as_x_for_validation():
     model.plot("loss", torch.tensor(4.0), train=False)
 
     assert model.board.data["val_loss"] == [(1.0, 3.0)]
+
+
+def test_plot_uses_optimizer_step_as_x_in_step_mode():
+    model = ToyNet()
+    model.board = ProgressBoard(display=False)
+    model.trainer = FakeTrainer()
+    model.trainer.training_unit = "step"
+    model.trainer.global_step = 4
+
+    model.plot("loss", 2.0, train=True)
+
+    assert model.board.raw_points["train_loss"] == [(5.0, 2.0)]
 
 
 def test_plot_accepts_plain_floats():

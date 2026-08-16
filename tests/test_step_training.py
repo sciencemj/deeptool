@@ -66,6 +66,31 @@ class StepMetricModel(CountingModel):
         return loss
 
 
+class ScheduledModel(CountingModel):
+    def configure_optimizers(self):
+        optim = torch.optim.SGD(self.parameters(), lr=0.1)
+        scheduler = torch.optim.lr_scheduler.StepLR(
+            optim, step_size=1, gamma=0.1
+        )
+        return optim, scheduler
+
+
+class PlateauStepModel(CountingModel):
+    def __init__(self, losses):
+        super().__init__()
+        self.losses = iter(losses)
+
+    def configure_optimizers(self):
+        optim = torch.optim.SGD(self.parameters(), lr=0.1)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optim, patience=0, factor=0.1
+        )
+        return optim, scheduler
+
+    def validation_step(self, batch):
+        return torch.tensor(next(self.losses), device=batch[0].device)
+
+
 class EmptyData(DataModule):
     def get_dataloader(self, train):
         if not train:
@@ -116,6 +141,15 @@ def test_training_unit_is_derived_from_the_selected_limit():
 
     assert trainer.training_unit == "step"
     assert trainer.global_step == 0
+
+
+def test_step_trainer_uses_steps_for_board_and_plot_coordinates():
+    trainer = Trainer(max_steps=3, plot=True)
+    trainer.global_step = 2
+
+    assert trainer.board.xlabel == "step"
+    assert trainer.plot_x(train=True) == 3.0
+    assert trainer.plot_x(train=False) == 2.0
 
 
 def test_step_mode_performs_exactly_max_steps_updates():
@@ -224,3 +258,48 @@ def test_step_patience_counts_validation_checks_not_steps():
     assert trainer.global_step == 6
     assert trainer.history["step"][-1] == 6
     assert trainer.best_step == 2
+
+
+def test_auto_scheduler_steps_after_each_update_in_step_mode(tmp_path):
+    trainer = Trainer(
+        max_steps=3,
+        device="cpu",
+        plot=False,
+        log_dir=tmp_path / "exp",
+    )
+
+    trainer.fit(ScheduledModel(), TinyData(val_batches=0))
+
+    rows = _rows(tmp_path / "exp/history.jsonl")
+    assert [row["lr"] for row in rows] == pytest.approx(
+        [0.1, 0.01, 0.001]
+    )
+
+
+def test_epoch_interval_scheduler_steps_when_loader_is_exhausted():
+    trainer = Trainer(
+        max_steps=5,
+        scheduler_interval="epoch",
+        device="cpu",
+        plot=False,
+    )
+
+    trainer.fit(ScheduledModel(), TinyData(train_batches=2, val_batches=0))
+
+    assert trainer.optim.param_groups[0]["lr"] == pytest.approx(0.001)
+
+
+def test_plateau_scheduler_steps_on_step_validation_boundaries(tmp_path):
+    trainer = Trainer(
+        max_steps=6,
+        log_every_n_steps=2,
+        val_every_n_steps=2,
+        device="cpu",
+        plot=False,
+        log_dir=tmp_path / "exp",
+    )
+
+    trainer.fit(PlateauStepModel([0.5, 0.7, 0.8]), TinyData())
+
+    rows = _rows(tmp_path / "exp/history.jsonl")
+    assert [row["lr"] for row in rows] == pytest.approx([0.1, 0.1, 0.01])

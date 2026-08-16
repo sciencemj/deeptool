@@ -89,11 +89,10 @@ class Module(nn.Module, HyperParameters):
             return
         if torch.is_tensor(value):
             value = value.detach().cpu().item()
+        x = self.trainer.plot_x(train)
         if train:
-            x = self.trainer.train_batch_idx / self.trainer.num_train_batches
             every_n = self.trainer.num_train_batches / self.plot_train_per_epoch
         else:
-            x = self.trainer.epoch + 1
             every_n = self.trainer.num_val_batches / self.plot_valid_per_epoch
         prefix = "train_" if train else "val_"
         self.board.draw(x, float(value), prefix + key,
