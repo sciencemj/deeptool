@@ -70,23 +70,33 @@ def load_runs(root: str | Path) -> RunData:
     return runs
 
 
-def _load_history(path: Path) -> list[dict[str, Any]]:
+def _load_history(
+    path: Path, *, allow_incomplete_final: bool = False
+) -> list[dict[str, Any]]:
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
     rows = []
-    with path.open(encoding="utf-8") as file:
-        for line_number, line in enumerate(file, start=1):
-            if not line.strip():
-                continue
-            try:
-                row = json.loads(line)
-            except json.JSONDecodeError as error:
-                raise ValueError(
-                    f"invalid JSON in {path} at line {line_number}"
-                ) from error
-            if not isinstance(row, dict):
-                raise ValueError(
-                    f"expected a JSON object in {path} at line {line_number}"
-                )
-            rows.append(row)
+    for index, line in enumerate(lines):
+        line_number = index + 1
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError as error:
+            is_unterminated_final = (
+                allow_incomplete_final
+                and index == len(lines) - 1
+                and not line.endswith(("\n", "\r"))
+            )
+            if is_unterminated_final:
+                break
+            raise ValueError(
+                f"invalid JSON in {path} at line {line_number}"
+            ) from error
+        if not isinstance(row, dict):
+            raise ValueError(
+                f"expected a JSON object in {path} at line {line_number}"
+            )
+        rows.append(row)
     return rows
 
 

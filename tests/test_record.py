@@ -4,7 +4,7 @@ from matplotlib import pyplot as plt
 from matplotlib.figure import Figure
 import pytest
 
-from deeptool.record import RunRecorder, load_runs, plot_runs
+from deeptool.record import RunRecorder, _load_history, load_runs, plot_runs
 
 
 def test_recorder_writes_metadata_and_append_only_epoch_rows(tmp_path):
@@ -65,6 +65,32 @@ def test_load_runs_reports_malformed_line_location(tmp_path):
     (run / "history.jsonl").write_text('{"epoch": 0}\nnot-json\n')
 
     with pytest.raises(ValueError, match=r"broken/history.jsonl.*line 2"):
+        load_runs(tmp_path)
+
+
+def test_live_reader_ignores_only_non_terminated_partial_final_line(tmp_path):
+    path = tmp_path / "history.jsonl"
+    path.write_text('{"epoch": 0, "loss": 1.0}\n{"epoch": 1')
+
+    assert _load_history(path, allow_incomplete_final=True) == [
+        {"epoch": 0, "loss": 1.0}
+    ]
+
+
+def test_live_reader_rejects_newline_terminated_invalid_final_line(tmp_path):
+    path = tmp_path / "history.jsonl"
+    path.write_text('{"epoch": 0}\nnot-json\n')
+
+    with pytest.raises(ValueError, match=r"history.jsonl.*line 2"):
+        _load_history(path, allow_incomplete_final=True)
+
+
+def test_public_loader_stays_strict_for_partial_final_line(tmp_path):
+    run = tmp_path / "exp"
+    run.mkdir()
+    (run / "history.jsonl").write_text('{"epoch": 0}\n{"epoch": 1')
+
+    with pytest.raises(ValueError, match=r"history.jsonl.*line 2"):
         load_runs(tmp_path)
 
 
