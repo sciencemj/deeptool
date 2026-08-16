@@ -107,8 +107,12 @@ class Trainer(HyperParameters):
             if plot else None
         )
         self.recorder = RunRecorder(log_dir) if log_dir is not None else None
-        self.history = {"train_loss": [], "val_loss": []}
         self.training_unit = "epoch" if max_epochs is not None else "step"
+        self.history = (
+            {"train_loss": [], "val_loss": []}
+            if self.training_unit == "epoch"
+            else {"step": [], "train_loss": [], "val_loss": []}
+        )
         self.global_step = 0
         self.epoch = 0
         self.train_batch_idx = 0
@@ -149,7 +153,16 @@ class Trainer(HyperParameters):
     def prepare_data(self, data: DataModule) -> None:
         self.train_dataloader = data.train_dataloader()
         self.val_dataloader = data.val_dataloader()
-        self.num_train_batches = len(self.train_dataloader)
+        try:
+            self.num_train_batches = len(self.train_dataloader)
+        except TypeError as error:
+            if self.training_unit == "step":
+                raise ValueError(
+                    "step training needs a finite dataloader with a length"
+                ) from error
+            raise
+        if self.training_unit == "step" and self.num_train_batches == 0:
+            raise ValueError("train dataloader must not be empty")
         self.num_val_batches = (
             len(self.val_dataloader) if self.val_dataloader is not None else 0
         )
@@ -209,6 +222,10 @@ class Trainer(HyperParameters):
     def _fit_steps(self) -> None:
         self.model.train()
         train_iterator = iter(self.train_dataloader)
+        losses: list[float] = []
+        last_lr = float(self.optim.param_groups[0]["lr"])
+        window_started = perf_counter()
+        self._epoch_scalars = {}
         while self.global_step < self.max_steps:
             try:
                 batch = next(train_iterator)
@@ -216,7 +233,37 @@ class Trainer(HyperParameters):
                 self.epoch += 1
                 train_iterator = iter(self.train_dataloader)
                 batch = next(train_iterator)
-            self._train_batch(batch)
+            loss, last_lr = self._train_batch(batch)
+            losses.append(loss)
+            validate = (
+                self.global_step == self.max_steps
+                or self.val_every_n_steps is not None
+                and self.global_step % self.val_every_n_steps == 0
+            )
+            val_loss = self._run_validation() if validate else None
+            if val_loss is not None:
+                self._track_val_loss(val_loss)
+            emit = (
+                validate
+                or self.global_step % self.log_every_n_steps == 0
+                or self.global_step == self.max_steps
+            )
+            if not emit:
+                continue
+            metrics = self._finish_logged_scalars(append_history=False)
+            row = self._step_row(
+                losses,
+                val_loss,
+                metrics,
+                last_lr,
+                perf_counter() - window_started,
+            )
+            self._append_step_history(row)
+            self._record_row(row)
+            losses = []
+            self._epoch_scalars = {}
+            window_started = perf_counter()
+            self.model.train()
 
     def _configure_optimizers(self) -> None:
         configured = self.model.configure_optimizers()
@@ -299,11 +346,18 @@ class Trainer(HyperParameters):
             raise ValueError(f"{key!r} is reserved for Trainer epoch rows")
         self._epoch_scalars.setdefault(key, []).append(value)
 
-    def _finish_logged_scalars(self) -> dict[str, float]:
+    def _finish_logged_scalars(
+        self, *, append_history: bool = True
+    ) -> dict[str, float]:
         metrics = {
             key: sum(values) / len(values)
             for key, values in self._epoch_scalars.items()
         }
+        if append_history:
+            self._append_epoch_metrics(metrics)
+        return metrics
+
+    def _append_epoch_metrics(self, metrics: dict[str, float]) -> None:
         for key in self._logged_metric_names:
             if key not in metrics:
                 self.history[key].append(None)
@@ -312,7 +366,35 @@ class Trainer(HyperParameters):
                 self._logged_metric_names.append(key)
                 self.history[key] = [None] * self.epoch
             self.history[key].append(value)
-        return metrics
+
+    def _step_row(
+        self,
+        train_losses: list[float],
+        val_loss: float | None,
+        metrics: dict[str, float],
+        lr: float,
+        seconds: float,
+    ) -> dict[str, object]:
+        row: dict[str, object] = {
+            "step": self.global_step,
+            "train_loss": sum(train_losses) / len(train_losses),
+        }
+        if val_loss is not None:
+            row["val_loss"] = val_loss
+        row.update(metrics)
+        row["lr"] = lr
+        row["sec"] = seconds
+        return row
+
+    def _append_step_history(self, row: dict[str, object]) -> None:
+        history_keys = {
+            key for key in row if key not in {"lr", "sec"}
+        }
+        previous = len(self.history["step"])
+        for key in history_keys - self.history.keys():
+            self.history[key] = [None] * previous
+        for key in self.history:
+            self.history[key].append(row.get(key))
 
     def fit_epoch(self) -> None:
         self.model.train()
@@ -322,8 +404,15 @@ class Trainer(HyperParameters):
             losses.append(loss)
         self.history["train_loss"].append(sum(losses) / len(losses))
 
-        if self.num_val_batches == 0:
+        val_loss = self._run_validation()
+        if val_loss is None:
             return
+        self.history["val_loss"].append(val_loss)
+        self._track_val_loss(val_loss)
+
+    def _run_validation(self) -> float | None:
+        if self.num_val_batches == 0:
+            return None
         self.model.eval()
         losses = []
         for batch in self.val_dataloader:
@@ -331,8 +420,9 @@ class Trainer(HyperParameters):
                 loss = self.model.validation_step(self.prepare_batch(batch))
             self.val_batch_idx += 1
             losses.append(loss.detach().cpu().item())
-        val_loss = sum(losses) / len(losses)
-        self.history["val_loss"].append(val_loss)
+        return sum(losses) / len(losses)
+
+    def _track_val_loss(self, val_loss: float) -> None:
         if self._best_val_loss is None or val_loss < self._best_val_loss:
             self._best_val_loss = val_loss
 
