@@ -3,7 +3,7 @@
 import copy
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import torch
 
@@ -83,64 +83,102 @@ def load_checkpoint(path: str | Path, model: torch.nn.Module,
 
 
 class BestSnapshot:
-    """Keeps the model weights from the epoch with the lowest validation loss.
+    """Keeps model weights from the best value of one monitored scalar.
 
     With `path` unset the snapshot lives in memory as a `deepcopy`; with a path
     it is written to that file.
 
-    `val_loss` and `epoch` are tracked even when `enabled` is False. Comparing
-    floats costs nothing, and knowing which epoch was best is useful on its own.
-    Disabling only skips the copy or the write.
+    Score and progress are tracked even when `enabled` is False. Disabling only
+    skips the copy or write.
 
     Attributes:
-        val_loss: Lowest validation loss seen, or `None` before the first epoch.
-        epoch: Epoch that produced it, or `None`.
+        score: Best monitored score, or `None` before the first update.
+        progress_name: Whether `progress` represents an epoch or step.
+        progress: Epoch or step that produced the best score.
     """
 
     def __init__(self, enabled: bool = True, path: str | Path | None = None,
-                 with_optim: bool = False) -> None:
+                 with_optim: bool = False, monitor: str = "val_loss",
+                 mode: Literal["min", "max"] = "min") -> None:
         self.enabled = enabled
         self.path = path
         self.with_optim = with_optim
+        self.monitor = monitor
+        self.mode = mode
+        self.score = None
+        self.progress_name = None
+        self.progress = None
         self.val_loss = None
         self.epoch = None
         self._state = None
 
-    def update(self, val_loss: float, epoch: int, model: torch.nn.Module,
-               optim: torch.optim.Optimizer) -> None:
-        """Record a new minimum and snapshot the weights.
+    def update(self, score: float,
+               progress_name: Literal["epoch", "step"], progress: int,
+               model: torch.nn.Module,
+               optim: torch.optim.Optimizer) -> bool:
+        """Record an improved score and snapshot the weights.
 
-        Does nothing when `val_loss` is not lower than the current best.
+        Does nothing when `score` is not strictly better in the configured
+        direction.
 
         Args:
-            val_loss: Mean validation loss for this epoch.
-            epoch: Epoch index, stored when this is a new best.
+            score: Finite monitored value for this progress point.
+            progress_name: Whether `progress` is an epoch or step.
+            progress: Epoch or step stored when this is a new best.
             model: Model whose `state_dict` is snapshotted.
             optim: Optimizer, used only when `with_optim` is set.
+
+        Returns:
+            `True` when the score improved, otherwise `False`.
         """
-        if self.val_loss is not None and val_loss >= self.val_loss:
-            return
-        self.val_loss = val_loss
-        self.epoch = epoch
+        improved = (
+            self.score is None
+            or (self.mode == "min" and score < self.score)
+            or (self.mode == "max" and score > self.score)
+        )
+        if not improved:
+            return False
+        self.score = score
+        self.progress_name = progress_name
+        self.progress = progress
+        if self.monitor == "val_loss":
+            self.val_loss = score
+        if progress_name == "epoch":
+            self.epoch = progress
         if not self.enabled:
-            return
+            return True
         if self.path is None:
             self._state = copy.deepcopy(model.state_dict())
-            return
+            return True
         # optimizer 상태는 restore() 가 읽지 않는다. Adam 기준 모델의 2배라
         # 매 개선마다 쓰면 낭비이므로 기본값은 가중치 전용이다.
         if self.with_optim:
-            payload = checkpoint_payload(model, optim, epoch)
+            payload = checkpoint_payload(model, optim, progress)
+            if self.monitor != "val_loss" or progress_name != "epoch":
+                payload.update({
+                    "monitor": self.monitor,
+                    "mode": self.mode,
+                    "score": score,
+                })
+        elif self.monitor != "val_loss" or progress_name != "epoch":
+            payload = {
+                "model": model.state_dict(),
+                progress_name: progress,
+                "monitor": self.monitor,
+                "mode": self.mode,
+                "score": score,
+            }
         else:
             payload = {
                 "model": model.state_dict(),
-                "epoch": epoch,
-                "val_loss": val_loss,
+                "epoch": progress,
+                "val_loss": score,
             }
         atomic_save(payload, self.path)
+        return True
 
     def restore(self, model: torch.nn.Module) -> int:
-        """Restore `model` to the best weights and return that epoch.
+        """Restore `model` to the best weights and return its progress value.
 
         Only model weights are restored; optimizer state is left alone. The
         point is to evaluate with the best model, not to resume training.
@@ -149,23 +187,23 @@ class BestSnapshot:
             model: Model to restore into.
 
         Returns:
-            The epoch index that was restored.
+            The epoch or step value that was restored.
 
         Raises:
             RuntimeError: If no snapshot exists — either there was no validation
                 data, or snapshotting was disabled.
         """
-        if self.epoch is None:
+        if self.progress is None:
             raise RuntimeError("No snapshot: there was no validation data.")
         if not self.enabled:
             raise RuntimeError(
                 f"No snapshot: trained with snapshot_best=False. "
-                f"(best was epoch {self.epoch}, "
-                f"val_loss {self.val_loss:.4f})"
+                f"(best was {self.progress_name} {self.progress}, "
+                f"{self.monitor} {self.score:.4f})"
             )
         if self.path is None:
             model.load_state_dict(self._state)
         else:
             ckpt = torch.load(self.path, map_location="cpu", weights_only=False)
             model.load_state_dict(ckpt["model"])
-        return self.epoch
+        return self.progress

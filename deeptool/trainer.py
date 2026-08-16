@@ -244,7 +244,9 @@ class Trainer(HyperParameters):
             losses.append(loss.detach().cpu().item())
         val_loss = sum(losses) / len(losses)
         self.history["val_loss"].append(val_loss)
-        self._best.update(val_loss, self.epoch, self.model, self.optim)
+        self._best.update(
+            val_loss, "epoch", self.epoch, self.model, self.optim
+        )
 
     def clip_gradients(self, grad_clip_val: float) -> None:
         params = [p for p in self.model.parameters() if p.requires_grad]
