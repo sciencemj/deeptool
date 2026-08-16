@@ -24,6 +24,15 @@ dependencies = [
     "ipython>=8.0",
 ]
 
+[project.optional-dependencies]
+dashboard = [
+    "streamlit>=1.37",
+    "altair>=5",
+]
+
+[project.scripts]
+deeptool-dashboard = "deeptool.dashboard:main"
+
 [project.urls]
 Homepage = "https://github.com/sciencemj/deeptool"
 Repository = "https://github.com/sciencemj/deeptool"
