@@ -4,7 +4,7 @@ import deeptool
 
 
 def test_package_exposes_version():
-    assert deeptool.__version__ == "0.3.0"
+    assert deeptool.__version__ == "0.4.0"
 
 
 def test_distribution_name_is_deeptool():
