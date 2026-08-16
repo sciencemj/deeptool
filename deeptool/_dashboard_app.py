@@ -63,14 +63,15 @@ def render_dashboard(root: Path, refresh: float) -> None:
     st.title("deeptool dashboard")
     st.caption(f"Run root: {root.resolve()}")
 
-    run_every = refresh if refresh > 0 else None
     st.sidebar.caption("Run visibility and Focus")
-
-    @st.fragment(run_every=run_every)
-    def live_panel() -> None:
+    if refresh == 0:
         _render_live_panel(root, refresh)
+    else:
+        @st.fragment(run_every=refresh)
+        def live_panel() -> None:
+            _render_live_panel(root, refresh)
 
-    live_panel()
+        live_panel()
 
 
 def _render_live_panel(root: Path, refresh: float) -> None:
