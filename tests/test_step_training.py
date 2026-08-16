@@ -55,6 +55,17 @@ class CountingModel(Module):
         return super().training_step(batch)
 
 
+class StepMetricModel(CountingModel):
+    def __init__(self, scores):
+        super().__init__()
+        self.scores = iter(scores)
+
+    def validation_step(self, batch):
+        loss = super().validation_step(batch)
+        self.log("iou", next(self.scores))
+        return loss
+
+
 class EmptyData(DataModule):
     def get_dataloader(self, train):
         if not train:
@@ -175,3 +186,41 @@ def test_step_mode_rejects_empty_train_loader():
 def test_step_mode_rejects_lengthless_train_loader():
     with pytest.raises(ValueError, match="finite.*length"):
         Trainer(max_steps=1, plot=False).fit(CountingModel(), LengthlessData())
+
+
+def test_step_monitor_tracks_best_step_and_restore_value():
+    model = StepMetricModel([0.4, 0.8, 0.6])
+    trainer = Trainer(
+        max_steps=6,
+        val_every_n_steps=2,
+        monitor="iou",
+        mode="max",
+        device="cpu",
+        plot=False,
+    )
+
+    trainer.fit(model, TinyData())
+
+    assert trainer.best_score == pytest.approx(0.8)
+    assert trainer.best_step == 4
+    assert trainer.best_epoch is None
+    assert trainer.restore_best() == 4
+
+
+def test_step_patience_counts_validation_checks_not_steps():
+    model = StepMetricModel([0.8, 0.7, 0.6, 0.9])
+    trainer = Trainer(
+        max_steps=10,
+        val_every_n_steps=2,
+        patience=2,
+        monitor="iou",
+        mode="max",
+        device="cpu",
+        plot=False,
+    )
+
+    trainer.fit(model, TinyData())
+
+    assert trainer.global_step == 6
+    assert trainer.history["step"][-1] == 6
+    assert trainer.best_step == 2

@@ -258,8 +258,14 @@ class Trainer(HyperParameters):
                 last_lr,
                 perf_counter() - window_started,
             )
+            improved = (
+                self._update_best(row, "step", self.global_step)
+                if validate else None
+            )
             self._append_step_history(row)
             self._record_row(row)
+            if validate and self._should_stop_early(improved):
+                return
             losses = []
             self._epoch_scalars = {}
             window_started = perf_counter()
