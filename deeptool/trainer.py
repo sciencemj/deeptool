@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
-from typing import Any
+from typing import Any, Literal
 
 import torch
 
@@ -53,6 +53,8 @@ class Trainer(HyperParameters):
         patience: Stops after this many epochs without improvement. Requires
             validation data.
         log_dir: Writes run metadata and one flushed JSONL row per epoch here.
+        monitor: Exact scalar key used for best snapshots and early stopping.
+        mode: Whether lower (`min`) or higher (`max`) monitor values improve.
 
     Raises:
         ValueError: If `patience` is below 1.
@@ -67,12 +69,18 @@ class Trainer(HyperParameters):
                  best_path: str | Path | None = None,
                  best_with_optim: bool = False,
                  patience: int | None = None,
-                 log_dir: str | Path | None = None) -> None:
+                 log_dir: str | Path | None = None,
+                 monitor: str = "val_loss",
+                 mode: Literal["min", "max"] = "min") -> None:
         self.save_hyperparameters()
         # patience=0 이면 최저점 epoch 에서도 epoch - best_epoch >= 0 이 참이 되어
         # 첫 epoch 직후 멈춘다. 의미가 없으므로 막는다.
         if patience is not None and patience < 1:
             raise ValueError(f"patience must be at least 1 (got {patience})")
+        if not isinstance(monitor, str) or not monitor:
+            raise ValueError("monitor must be a non-empty string")
+        if mode not in {"min", "max"}:
+            raise ValueError("mode must be 'min' or 'max'")
         self.device = torch.device(device) if device is not None else default_device()
         self.board = (
             ProgressBoard(xlabel="epoch", ylabel="loss", display=_in_notebook())
@@ -85,17 +93,35 @@ class Trainer(HyperParameters):
         self.val_batch_idx = 0
         self._epoch_scalars: dict[str, list[float]] = {}
         self._logged_metric_names: list[str] = []
-        self._best = BestSnapshot(snapshot_best, best_path, best_with_optim)
+        self._best_val_loss: float | None = None
+        self._best = BestSnapshot(
+            snapshot_best, best_path, best_with_optim,
+            monitor=monitor, mode=mode,
+        )
 
     @property
     def best_val_loss(self) -> float | None:
         """Lowest validation loss seen, or `None` before the first epoch."""
-        return self._best.val_loss
+        return self._best_val_loss
+
+    @property
+    def best_score(self) -> float | None:
+        """Best value seen for the configured monitor."""
+        return self._best.score
 
     @property
     def best_epoch(self) -> int | None:
-        """Epoch that produced the lowest validation loss, or `None`."""
-        return self._best.epoch
+        """Epoch that produced the best score, or `None` in step mode."""
+        if self._best.progress_name == "epoch":
+            return self._best.progress
+        return None
+
+    @property
+    def best_step(self) -> int | None:
+        """Step that produced the best score, or `None` in epoch mode."""
+        if self._best.progress_name == "step":
+            return self._best.progress
+        return None
 
     def prepare_data(self, data: DataModule) -> None:
         self.train_dataloader = data.train_dataloader()
@@ -244,6 +270,8 @@ class Trainer(HyperParameters):
             losses.append(loss.detach().cpu().item())
         val_loss = sum(losses) / len(losses)
         self.history["val_loss"].append(val_loss)
+        if self._best_val_loss is None or val_loss < self._best_val_loss:
+            self._best_val_loss = val_loss
         self._best.update(
             val_loss, "epoch", self.epoch, self.model, self.optim
         )

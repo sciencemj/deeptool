@@ -471,6 +471,30 @@ def test_best_val_loss_matches_the_history_minimum():
     assert trainer.best_val_loss == pytest.approx(min(trainer.history["val_loss"]))
 
 
+def test_monitor_defaults_preserve_validation_loss_behavior():
+    trainer = Trainer(max_epochs=4, device="cpu", plot=False)
+    trainer.fit(ScriptedLoss([0.5, 0.3, 0.7, 0.9]), ScriptedData())
+
+    assert trainer.monitor == "val_loss"
+    assert trainer.mode == "min"
+    assert trainer.best_score == pytest.approx(0.3)
+    assert trainer.best_epoch == 1
+    assert trainer.best_step is None
+    assert trainer.best_val_loss == pytest.approx(0.3)
+
+
+@pytest.mark.parametrize("mode", ["auto", "minimum", "MAX"])
+def test_monitor_mode_must_be_min_or_max(mode):
+    with pytest.raises(ValueError, match="mode.*min.*max"):
+        Trainer(max_epochs=1, mode=mode)
+
+
+@pytest.mark.parametrize("monitor", ["", None, 1])
+def test_monitor_name_must_be_a_non_empty_string(monitor):
+    with pytest.raises(ValueError, match="monitor.*string"):
+        Trainer(max_epochs=1, monitor=monitor)
+
+
 def test_fit_keeps_the_last_epoch_weights_until_restore_best():
     """fit() 은 가중치를 자동 복원하지 않는다."""
     model = ScriptedLoss([0.5, 0.3, 0.7, 0.9])
