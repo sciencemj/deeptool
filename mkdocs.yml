@@ -30,6 +30,7 @@ nav:
       - 모델: guide/module.md
       - 데이터: guide/data.md
       - 학습기: guide/trainer.md
+      - 실행 대시보드: guide/dashboard.md
       - 최적 가중치와 조기 종료: guide/best.md
       - 사후 평가: guide/evaluate.md
   - API: api.md
@@ -57,6 +58,7 @@ plugins:
             모델: Model
             데이터: Data
             학습기: Trainer
+            실행 대시보드: Run dashboard
             최적 가중치와 조기 종료: Best weights & early stopping
             사후 평가: Evaluation
   - mkdocstrings:

@@ -66,6 +66,7 @@ trainer.fit(LinearRegression(), SyntheticRegression())
 | 하이퍼파라미터 저장 | `save_hyperparameters()` 가 `__init__` 인자를 속성과 `hparams` 로 |
 | 셀 간 메서드 추가 | `@add_to_class` 로 클래스 재정의 없이 |
 | 라이브 손실 곡선 | 학습 중 셀 안에서 제자리 갱신 |
+| 실행 기록 · 대시보드 | JSONL 영속화, 실행별 토글 비교, SSH 원격 보기 |
 | 디바이스 자동 선택 | `cuda` → `mps` → `cpu` |
 | 최적 가중치 · 조기 종료 | `val_loss` 또는 custom monitor 스냅샷, `patience` |
 | 사후 평가 | `trainer.predict(data)` 로 샘플별 예측 수집 |
@@ -83,6 +84,7 @@ trainer.fit(LinearRegression(), SyntheticRegression())
 - [모델](guide/module.md) — `Module` 과 `add_to_class`
 - [데이터](guide/data.md) — `DataModule`
 - [학습기](guide/trainer.md) — `Trainer`, 디바이스, `history`
+- [실행 대시보드](guide/dashboard.md) — 라이브 실행 비교와 SSH tunnel
 - [최적 가중치와 조기 종료](guide/best.md) — `restore_best`, `patience`
 - [사후 평가](guide/evaluate.md) — `predict`, `Predictions`
 - [API](api.md) — 전체 레퍼런스

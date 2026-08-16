@@ -67,6 +67,7 @@ trainer.fit(LinearRegression(), SyntheticRegression())
 | Hyperparameter capture | `save_hyperparameters()` turns `__init__` arguments into attributes and `hparams` |
 | Cross-cell methods | `@add_to_class` without redefining the class |
 | Live loss curves | Redrawn in place during training |
+| Run records and dashboard | Persistent JSONL, per-run comparison, remote SSH viewing |
 | Device selection | `cuda` → `mps` → `cpu` |
 | Best weights, early stopping | Snapshot by `val_loss` or a custom monitor, plus `patience` |
 | Post-hoc evaluation | `trainer.predict(data)` collects per-sample predictions |
@@ -86,6 +87,7 @@ not grow.
 - [Model](guide/module.md) — `Module` and `add_to_class`
 - [Data](guide/data.md) — `DataModule`
 - [Trainer](guide/trainer.md) — `Trainer`, devices, `history`
+- [Run dashboard](guide/dashboard.md) — live run comparison and SSH tunnels
 - [Best weights & early stopping](guide/best.md) — `restore_best`, `patience`
 - [Evaluation](guide/evaluate.md) — `predict`, `Predictions`
 - [API](api.md) — full reference

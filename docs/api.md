@@ -62,3 +62,10 @@
         - save_checkpoint
         - load_checkpoint
         - BestSnapshot
+
+## Dashboard launcher
+
+::: deeptool.dashboard
+    options:
+      members:
+        - main

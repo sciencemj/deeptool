@@ -130,6 +130,29 @@ step 모드의 기록은 `epoch` 대신 1부터 시작하는 `step`을 쓴다. �
 `val_every_n_steps` 간격과 마지막 step에 실행하며, 생략하면 마지막에만 실행한다.
 `best_step`과 `restore_best()`도 같은 optimizer step을 가리킨다.
 
+### Streamlit 실행 대시보드
+
+선택 extra를 설치하면 기록 중인 실행을 브라우저에서 비교할 수 있다.
+
+```bash
+uv add "deeptool[dashboard]"
+deeptool-dashboard runs/
+```
+
+실행별 토글과 Focus 패널을 제공하며 train/validation loss는 같은 차트의
+실선/점선으로 표시한다. epoch과 step 실행은 서로 다른 그룹이다. 원격 SSH
+학습은 서버를 loopback에 둔 채 local forwarding으로 본다.
+
+```bash
+# local
+ssh -L 8501:127.0.0.1:8501 user@training-host
+# remote
+deeptool-dashboard runs/ --no-browser
+```
+
+자세한 사용법과 `0.0.0.0` 노출 경고는
+[실행 대시보드 가이드](https://sciencemj.github.io/deeptool/guide/dashboard/)에 있다.
+
 ### 학습률 스케줄러
 
 scheduler는 optimizer와 함께 반환한다.
