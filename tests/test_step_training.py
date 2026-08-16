@@ -1,6 +1,55 @@
 import pytest
+import torch
+from torch import nn
+from torch.nn import functional as F
 
+from deeptool.data import DataModule
+from deeptool.module import Module
 from deeptool.trainer import Trainer
+
+
+class TinyData(DataModule):
+    def __init__(self, train_batches=2, val_batches=1):
+        super().__init__(batch_size=1)
+        self.X = torch.arange(
+            train_batches + val_batches, dtype=torch.float32
+        ).view(-1, 1)
+        self.y = 2 * self.X
+        self.train_batches = train_batches
+        self.val_batches = val_batches
+
+    def get_dataloader(self, train):
+        if train:
+            return self.get_tensorloader(
+                (self.X, self.y), True, slice(0, self.train_batches)
+            )
+        if self.val_batches == 0:
+            return None
+        return self.get_tensorloader(
+            (self.X, self.y),
+            False,
+            slice(
+                self.train_batches,
+                self.train_batches + self.val_batches,
+            ),
+        )
+
+
+class CountingModel(Module):
+    def __init__(self):
+        super().__init__()
+        self.net = nn.Linear(1, 1)
+        self.updates = 0
+
+    def loss(self, y_hat, y):
+        return F.mse_loss(y_hat, y)
+
+    def configure_optimizers(self):
+        return torch.optim.SGD(self.parameters(), lr=0.1)
+
+    def training_step(self, batch):
+        self.updates += 1
+        return super().training_step(batch)
 
 
 @pytest.mark.parametrize(
@@ -28,3 +77,13 @@ def test_training_unit_is_derived_from_the_selected_limit():
 
     assert trainer.training_unit == "step"
     assert trainer.global_step == 0
+
+
+def test_step_mode_performs_exactly_max_steps_updates():
+    model = CountingModel()
+    trainer = Trainer(max_steps=5, device="cpu", plot=False)
+
+    trainer.fit(model, TinyData(train_batches=2, val_batches=0))
+
+    assert model.updates == 5
+    assert trainer.global_step == 5

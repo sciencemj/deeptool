@@ -190,6 +190,9 @@ class Trainer(HyperParameters):
         if isinstance(self.scheduler, plateau) and self.num_val_batches == 0:
             raise ValueError("ReduceLROnPlateau needs validation data.")
         self._record_meta()
+        if self.training_unit == "step":
+            self._fit_steps()
+            return self.history
         for self.epoch in range(self.max_epochs):
             started = perf_counter()
             self._epoch_scalars = {}
@@ -202,6 +205,18 @@ class Trainer(HyperParameters):
             if self._should_stop_early(improved):
                 break
         return self.history
+
+    def _fit_steps(self) -> None:
+        self.model.train()
+        train_iterator = iter(self.train_dataloader)
+        while self.global_step < self.max_steps:
+            try:
+                batch = next(train_iterator)
+            except StopIteration:
+                self.epoch += 1
+                train_iterator = iter(self.train_dataloader)
+                batch = next(train_iterator)
+            self._train_batch(batch)
 
     def _configure_optimizers(self) -> None:
         configured = self.model.configure_optimizers()
@@ -303,14 +318,8 @@ class Trainer(HyperParameters):
         self.model.train()
         losses = []
         for batch in self.train_dataloader:
-            loss = self.model.training_step(self.prepare_batch(batch))
-            self.optim.zero_grad()
-            loss.backward()
-            if self.gradient_clip_val > 0:
-                self.clip_gradients(self.gradient_clip_val)
-            self.optim.step()
-            self.train_batch_idx += 1
-            losses.append(loss.detach().cpu().item())
+            loss, _ = self._train_batch(batch)
+            losses.append(loss)
         self.history["train_loss"].append(sum(losses) / len(losses))
 
         if self.num_val_batches == 0:
@@ -326,6 +335,20 @@ class Trainer(HyperParameters):
         self.history["val_loss"].append(val_loss)
         if self._best_val_loss is None or val_loss < self._best_val_loss:
             self._best_val_loss = val_loss
+
+    def _train_batch(
+        self, batch: Sequence[torch.Tensor]
+    ) -> tuple[float, float]:
+        loss = self.model.training_step(self.prepare_batch(batch))
+        self.optim.zero_grad()
+        loss.backward()
+        if self.gradient_clip_val > 0:
+            self.clip_gradients(self.gradient_clip_val)
+        lr = float(self.optim.param_groups[0]["lr"])
+        self.optim.step()
+        self.train_batch_idx += 1
+        self.global_step += 1
+        return float(loss.detach().cpu().item()), lr
 
     def clip_gradients(self, grad_clip_val: float) -> None:
         params = [p for p in self.model.parameters() if p.requires_grad]
