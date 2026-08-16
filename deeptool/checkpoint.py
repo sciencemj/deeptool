@@ -108,8 +108,6 @@ class BestSnapshot:
         self.score = None
         self.progress_name = None
         self.progress = None
-        self.val_loss = None
-        self.epoch = None
         self._state = None
 
     def update(self, score: float,
@@ -141,10 +139,6 @@ class BestSnapshot:
         self.score = score
         self.progress_name = progress_name
         self.progress = progress
-        if self.monitor == "val_loss":
-            self.val_loss = score
-        if progress_name == "epoch":
-            self.epoch = progress
         if not self.enabled:
             return True
         if self.path is None:

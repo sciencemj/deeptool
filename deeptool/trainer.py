@@ -2,6 +2,7 @@
 
 from collections.abc import Sequence
 from datetime import UTC, datetime
+import math
 from pathlib import Path
 from time import perf_counter
 from typing import Any, Literal
@@ -93,6 +94,7 @@ class Trainer(HyperParameters):
         self.val_batch_idx = 0
         self._epoch_scalars: dict[str, list[float]] = {}
         self._logged_metric_names: list[str] = []
+        self._bad_monitor_checks = 0
         self._best_val_loss: float | None = None
         self._best = BestSnapshot(
             snapshot_best, best_path, best_with_optim,
@@ -168,9 +170,11 @@ class Trainer(HyperParameters):
             self._epoch_scalars = {}
             self.fit_epoch()
             metrics = self._finish_logged_scalars()
-            self._record_epoch(metrics, perf_counter() - started)
+            row = self._epoch_row(metrics, perf_counter() - started)
+            improved = self._update_best(row, "epoch", self.epoch)
+            self._record_row(row)
             self._step_scheduler()
-            if self._should_stop_early():
+            if self._should_stop_early(improved):
                 break
         return self.history
 
@@ -207,9 +211,8 @@ class Trainer(HyperParameters):
             model_hparams=getattr(self.model, "hparams", {}),
         )
 
-    def _record_epoch(self, metrics: dict[str, float], seconds: float) -> None:
-        if self.recorder is None:
-            return
+    def _epoch_row(self, metrics: dict[str, float],
+                   seconds: float) -> dict[str, object]:
         row: dict[str, object] = {
             "epoch": self.epoch,
             "train_loss": self.history["train_loss"][-1],
@@ -219,11 +222,37 @@ class Trainer(HyperParameters):
         row.update(metrics)
         row["lr"] = float(self.optim.param_groups[0]["lr"])
         row["sec"] = float(seconds)
+        return row
+
+    def _record_row(self, row: dict[str, object]) -> None:
+        if self.recorder is None:
+            return
         self.recorder.epoch(**row)
         if not _in_notebook():
             print(" ".join(
                 f"{key}={_format_scalar(value)}" for key, value in row.items()
             ))
+
+    def _update_best(
+        self, row: dict[str, object],
+        progress_name: Literal["epoch", "step"], progress: int,
+    ) -> bool | None:
+        if self.monitor == "val_loss" and "val_loss" not in row:
+            return None
+        if self.monitor not in row:
+            raise ValueError(
+                f"monitor {self.monitor!r} was not logged at "
+                f"{progress_name} {progress}"
+            )
+        score = float(row[self.monitor])
+        if not math.isfinite(score):
+            raise ValueError(
+                f"monitor {self.monitor!r} must be finite at "
+                f"{progress_name} {progress}"
+            )
+        return self._best.update(
+            score, progress_name, progress, self.model, self.optim
+        )
 
     def _log_scalar(self, key: str, value: float) -> None:
         if key in self._ROW_FIELDS:
@@ -272,19 +301,19 @@ class Trainer(HyperParameters):
         self.history["val_loss"].append(val_loss)
         if self._best_val_loss is None or val_loss < self._best_val_loss:
             self._best_val_loss = val_loss
-        self._best.update(
-            val_loss, "epoch", self.epoch, self.model, self.optim
-        )
 
     def clip_gradients(self, grad_clip_val: float) -> None:
         params = [p for p in self.model.parameters() if p.requires_grad]
         torch.nn.utils.clip_grad_norm_(params, grad_clip_val)
 
-    def _should_stop_early(self) -> bool:
-        """True once `patience` epochs have passed without improvement."""
-        if self.patience is None or self.best_epoch is None:
+    def _should_stop_early(self, improved: bool | None) -> bool:
+        """True once `patience` monitor checks pass without improvement."""
+        if self.patience is None or improved is None:
             return False
-        return self.epoch - self.best_epoch >= self.patience
+        self._bad_monitor_checks = (
+            0 if improved else self._bad_monitor_checks + 1
+        )
+        return self._bad_monitor_checks >= self.patience
 
     def restore_best(self) -> int:
         """Load the weights from the epoch with the lowest validation loss.

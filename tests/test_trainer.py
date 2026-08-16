@@ -407,6 +407,18 @@ def validation_step(self, batch):
     return loss
 
 
+class ScriptedIou(ScriptedLoss):
+    def __init__(self, losses, scores):
+        super().__init__(losses)
+        self.scores = scores
+
+    def validation_step(self, batch):
+        index = self.call_count
+        loss = super().validation_step(batch)
+        self.log("iou", self.scores[index])
+        return loss
+
+
 class PlateauScriptedLoss(ScriptedLoss):
     def configure_optimizers(self):
         optim = torch.optim.SGD(self.parameters(), lr=0.1)
@@ -586,6 +598,53 @@ def test_patience_stops_training_early():
 
     assert len(trainer.history["val_loss"]) == 4   # epoch 0~3
     assert trainer.best_epoch == 1
+
+
+def test_max_monitor_controls_best_score_epoch_and_early_stopping():
+    trainer = Trainer(
+        max_epochs=6,
+        device="cpu",
+        plot=False,
+        monitor="iou",
+        mode="max",
+        patience=2,
+    )
+    trainer.fit(
+        ScriptedIou([0.5] * 6, [0.4, 0.7, 0.6, 0.5, 0.9, 1.0]),
+        ScriptedData(),
+    )
+
+    assert trainer.best_score == pytest.approx(0.7)
+    assert trainer.best_epoch == 1
+    assert trainer.best_val_loss == pytest.approx(0.5)
+    assert len(trainer.history["iou"]) == 4
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), -float("inf")])
+def test_monitor_rejects_non_finite_values(value):
+    trainer = Trainer(
+        max_epochs=1,
+        device="cpu",
+        plot=False,
+        monitor="iou",
+        mode="max",
+    )
+
+    with pytest.raises(ValueError, match=r"iou.*finite.*epoch 0"):
+        trainer.fit(ScriptedIou([0.5], [value]), ScriptedData())
+
+
+def test_missing_custom_monitor_names_epoch():
+    trainer = Trainer(
+        max_epochs=1,
+        device="cpu",
+        plot=False,
+        monitor="iou",
+        mode="max",
+    )
+
+    with pytest.raises(ValueError, match=r"iou.*epoch 0"):
+        trainer.fit(LinReg(), LinearData())
 
 
 def test_without_patience_every_epoch_runs():
