@@ -27,3 +27,31 @@ jobs:
 
       - name: Run tests
         run: uv run pytest -v
+
+  dashboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v9.0.0
+
+      - name: Install dashboard extra
+        run: uv sync --locked --python 3.13 --extra dashboard
+
+      - name: Run dashboard tests
+        run: >-
+          uv run pytest -v
+          tests/test_dashboard_data.py
+          tests/test_dashboard_cli.py
+          tests/test_dashboard_app.py
+          tests/test_package.py
+
+      - name: Build wheel
+        run: uv build
+
+      - name: Smoke console script from built wheel
+        run: |
+          WHEEL="$(find dist -name 'deeptool-*.whl' -print -quit)"
+          uv run --no-project --isolated --with "$WHEEL[dashboard]" \
+            deeptool-dashboard --help
