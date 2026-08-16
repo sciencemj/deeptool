@@ -65,6 +65,17 @@ class LateMetricLinReg(LinReg):
         return loss
 
 
+class TrainingMetricLinReg(LinReg):
+    def __init__(self, scores):
+        super().__init__()
+        self.scores = scores
+
+    def training_step(self, batch):
+        loss = super().training_step(batch)
+        self.log("score", self.scores[self.trainer.epoch])
+        return loss
+
+
 class ReservedMetricLinReg(LinReg):
     def training_step(self, batch):
         loss = super().training_step(batch)
@@ -645,6 +656,22 @@ def test_missing_custom_monitor_names_epoch():
 
     with pytest.raises(ValueError, match=r"iou.*epoch 0"):
         trainer.fit(LinReg(), LinearData())
+
+
+def test_training_metric_supports_patience_without_validation_data():
+    trainer = Trainer(
+        max_epochs=3,
+        device="cpu",
+        plot=False,
+        patience=1,
+        monitor="score",
+        mode="max",
+    )
+    trainer.fit(TrainingMetricLinReg([0.8, 0.7, 0.9]), NoValData())
+
+    assert trainer.best_score == pytest.approx(0.8)
+    assert trainer.best_epoch == 0
+    assert trainer.history["score"] == pytest.approx([0.8, 0.7])
 
 
 def test_without_patience_every_epoch_runs():

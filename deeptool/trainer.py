@@ -47,7 +47,7 @@ class Trainer(HyperParameters):
         device: Where to train. Defaults to `default_device()`.
         gradient_clip_val: Clips gradient norm after backward when above zero.
         plot: Draws a live loss curve in the notebook.
-        snapshot_best: Keeps the weights from the lowest-validation-loss epoch.
+        snapshot_best: Keeps weights from the best monitored progress point.
         best_path: Writes that snapshot to this file instead of memory.
         best_with_optim: Also stores optimizer state in the snapshot file, so it
             can resume training.
@@ -156,7 +156,11 @@ class Trainer(HyperParameters):
         self.prepare_data(data)
         # 검증 데이터가 없으면 best_epoch 가 계속 None 이라 조기 종료가 영원히
         # 발동하지 않는다. 조용히 무시하면 왜 안 멈추는지 알 수 없으므로 막는다.
-        if self.patience is not None and self.num_val_batches == 0:
+        if (
+            self.patience is not None
+            and self.monitor == "val_loss"
+            and self.num_val_batches == 0
+        ):
             raise ValueError("patience needs validation data.")
         self.prepare_model(model)
         self.materialize_lazy_parameters()
@@ -316,7 +320,7 @@ class Trainer(HyperParameters):
         return self._bad_monitor_checks >= self.patience
 
     def restore_best(self) -> int:
-        """Load the weights from the epoch with the lowest validation loss.
+        """Load weights from the best value of the configured monitor.
 
         `fit` never does this on its own. Until you call it the model holds the
         last epoch's weights, so you can compare the two.
@@ -324,7 +328,7 @@ class Trainer(HyperParameters):
         Only model weights are restored; optimizer state is left alone.
 
         Returns:
-            The epoch index that was restored.
+            The epoch or step value that was restored.
 
         Raises:
             RuntimeError: If `fit` has not run, if there was no validation data,
