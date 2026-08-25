@@ -6,7 +6,7 @@ import math
 from pathlib import Path
 from typing import Any, Literal
 
-from deeptool.record import _load_history
+from deeptool.record import _load_history, _transpose_rows
 
 
 @dataclass(frozen=True)
@@ -37,11 +37,7 @@ def discover_runs(root: str | Path) -> list[DashboardRun]:
             rows = _load_history(
                 history_path, allow_incomplete_final=True
             )
-            keys = dict.fromkeys(key for row in rows for key in row)
-            metrics = {
-                key: [row.get(key) for row in rows]
-                for key in keys
-            }
+            metrics = _transpose_rows(rows)
         except (OSError, ValueError) as caught:
             error = str(caught)
 

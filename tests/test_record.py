@@ -51,6 +51,21 @@ def test_load_runs_aligns_sparse_metrics_and_heterogeneous_runs(tmp_path):
     }
 
 
+def test_load_runs_handles_later_discovered_keys(tmp_path):
+    run = RunRecorder(tmp_path / "c")
+    run.epoch(epoch=0, loss=1.0)
+    run.epoch(epoch=1, loss=0.8, val_loss=0.9)
+    run.epoch(epoch=2, loss=0.6)
+
+    assert load_runs(tmp_path) == {
+        "c": {
+            "epoch": [0, 1, 2],
+            "loss": [1.0, 0.8, 0.6],
+            "val_loss": [None, 0.9, None],
+        }
+    }
+
+
 def test_load_runs_ignores_empty_lines(tmp_path):
     run = tmp_path / "exp"
     run.mkdir()
