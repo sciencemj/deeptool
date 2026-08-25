@@ -40,6 +40,19 @@ class RunRecorder:
             file.flush()
 
 
+def _transpose_rows(rows: list[dict[str, Any]]) -> dict[str, list[Any]]:
+    columns: dict[str, list[Any]] = {}
+    num_rows = len(rows)
+    for index, row in enumerate(rows):
+        for key, value in row.items():
+            column = columns.get(key)
+            if column is None:
+                column = [None] * num_rows
+                columns[key] = column
+            column[index] = value
+    return columns
+
+
 def load_runs(root: str | Path) -> RunData:
     """Load immediate child runs below `root` from their JSONL histories.
 
@@ -62,11 +75,7 @@ def load_runs(root: str | Path) -> RunData:
         if not run_dir.is_dir() or not history_path.is_file():
             continue
         rows = _load_history(history_path)
-        keys = dict.fromkeys(key for row in rows for key in row)
-        runs[run_dir.name] = {
-            key: [row.get(key) for row in rows]
-            for key in keys
-        }
+        runs[run_dir.name] = _transpose_rows(rows)
     return runs
 
 

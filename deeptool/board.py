@@ -49,10 +49,13 @@ class ProgressBoard(HyperParameters):
         points.append((float(x), float(y)))
         if len(points) < every_n:
             return
-        self.data[label].append((
-            sum(p[0] for p in points) / len(points),
-            sum(p[1] for p in points) / len(points),
-        ))
+        n = len(points)
+        sum_x = 0.0
+        sum_y = 0.0
+        for px, py in points:
+            sum_x += px
+            sum_y += py
+        self.data[label].append((sum_x / n, sum_y / n))
         points.clear()
         if self.display:
             self._render()

@@ -111,3 +111,21 @@ def test_chart_records_skip_non_finite_and_non_numeric_values(tmp_path):
             "split": "metric",
         }
     ]
+
+
+def test_discover_runs_transposes_sparse_keys_correctly(tmp_path):
+    _write_run(
+        tmp_path,
+        "sparse",
+        [
+            '{"epoch": 0, "metric_a": 1}\n',
+            '{"epoch": 1, "metric_b": 2}\n',
+            '{"epoch": 2, "metric_a": 3, "metric_b": 4}\n',
+        ],
+    )
+
+    run = discover_runs(tmp_path)[0]
+
+    assert run.metrics["epoch"] == [0, 1, 2]
+    assert run.metrics["metric_a"] == [1, None, 3]
+    assert run.metrics["metric_b"] == [None, 2, 4]
